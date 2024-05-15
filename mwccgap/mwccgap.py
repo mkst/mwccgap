@@ -17,8 +17,8 @@ def assemble_file(asm_filepath, as_path="mipsel-linux-gnu-as", as_flags=None):
         cmd = [
             as_path,
             "-EL",
-            "-march=r6000",
-            "-mabi=eabi",
+            "-march=gs464",
+            "-mabi=32",
             "-Iinclude",
             "-o",
             temp_file.name,
