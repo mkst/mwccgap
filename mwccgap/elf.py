@@ -1,5 +1,5 @@
 import struct
-from typing import List
+from typing import List, Optional
 
 
 class Elf:
@@ -20,9 +20,15 @@ class Elf:
 
     sections: List["Section"]
 
+    symtab: "Symtab"
+    shstrtab: "Strtab"
+    strtab: "Strtab"
+
+    fmt = "<16sHHIIIIIHHHHHH"
+
     def __init__(
         self,
-        data,
+        data: bytes,
     ):
         (
             self.e_ident,
@@ -41,14 +47,13 @@ class Elf:
             self.e_shstrndx,
         ) = Elf.unpack(data)
 
-        self.sections = []
+        self.sections: List[Section] = []
+        self.relocations: List[RelocationRecord] = []
+        self.functions: List[TextSection] = []
 
-        self.relocations = []
-        self.functions = []
-
-        self.symtab = None
-        self.shstrtab = None
-        self.strtab = None
+        self.symtab = None  # type: ignore
+        self.shstrtab = None  # type: ignore
+        self.strtab = None  # type: ignore
 
         e_shoff = self.e_shoff
         e_shnum = self.e_shnum
@@ -67,14 +72,14 @@ class Elf:
                 sh_info,
                 sh_addralign,
                 sh_entsize,
-            ) = Section.unpack(data[ptr : ptr + 0x28])
-            # print(f"ptr: 0x{ptr:X}, sh_offset: 0x{sh_offset:X}, sh_type: 0x{sh_type:X}")
+            ) = Section.unpack_header(data[ptr : ptr + 0x28])
+
             section_data = data[sh_offset : sh_offset + sh_size]
 
             if sh_type == 2:
                 self.symtab_index = (ptr - e_shoff) // 0x28
 
-                section = Symtab(
+                symtab = Symtab(
                     sh_name,
                     sh_type,
                     sh_flags,
@@ -88,10 +93,11 @@ class Elf:
                     section_data,
                 )
                 assert self.symtab is None, "Only 1 symtab is currently supported"
-                self.symtab = section
+                self.symtab = symtab
+                self.sections.append(symtab)
 
             elif sh_type == 3:
-                section = Strtab(
+                strtab = Strtab(
                     sh_name,
                     sh_type,
                     sh_flags,
@@ -106,13 +112,14 @@ class Elf:
                 )
                 if len(self.sections) == self.e_shstrndx:
                     assert self.shstrtab is None, "Only 1 strtab is currently supported"
-                    self.shstrtab = section
+                    self.shstrtab = strtab
                 else:
                     assert self.strtab is None, "Only 1 strtab is currently supported"
-                    self.strtab = section
+                    self.strtab = strtab
+                self.sections.append(strtab)
 
             elif sh_type == 9:
-                section = RelocationRecord(
+                relocation_record = RelocationRecord(
                     sh_name,
                     sh_type,
                     sh_flags,
@@ -125,6 +132,7 @@ class Elf:
                     sh_entsize,
                     section_data,
                 )
+                self.sections.append(relocation_record)
 
             elif sh_type == 4:
                 raise Exception("FIXME: No support for RELA sections")
@@ -143,8 +151,7 @@ class Elf:
                     sh_entsize,
                     section_data,
                 )
-
-            self.sections.append(section)
+                self.sections.append(section)
 
             ptr += 0x28
             i += 1
@@ -155,7 +162,7 @@ class Elf:
 
         for i, section in enumerate(self.sections):
             section.name = self.shstrtab.get_symbol_by_index(section.sh_name)
-            section.index = i
+            # section.index = i
 
         for symbol in self.symtab.symbols:
             symbol.name = self.strtab.get_symbol_by_index(symbol.st_name)
@@ -169,24 +176,27 @@ class Elf:
             )
         ]
 
-        for section in self.sections:
+        for i, section in enumerate(self.sections):
             if isinstance(section, RelocationRecord):
                 for reloc in section.relocations:
                     reloc.symbol = self.symtab.symbols[reloc.symbol_index].name
                 self.relocations.append(section)
             else:
                 if section.name == ".text":
+                    text_section = TextSection.from_section(section)
+                    self.sections[i] = text_section
                     if len(function_names) == 0:
                         # FIXME: without globl label, ASM has no functions
                         pass
                     else:
-                        section.function_name = function_names[len(self.functions)]
-                    self.functions.append(section)
+                        function_name = function_names[len(self.functions)]
+                        text_section.function_name = function_name
+                    self.functions.append(text_section)
 
     def add_sh_symbol(self, symbol_name: str):
         return self.shstrtab.add_symbol(symbol_name)
 
-    def add_symbol(self, symbol: "Symbol"):
+    def add_symbol(self, symbol: "Symbol") -> int:
         index, _ = self.symtab.get_symbol_by_name(symbol.name)
         if index is not None:
             return index
@@ -195,30 +205,19 @@ class Elf:
         index = self.symtab.add_symbol(symbol)
         return index
 
-    def add_section(self, section, position=None):
-        # if position is None:
-        #     self.sections.append(section)
-        # else:
-        #     print(f"Inserting section immediately after section {position-1} ({self.sections[position-1].name})")
-        #     self.sections.insert(position, section)
-        #     for section in self.sections:
-        #         if section.sh_type == 9 and section.sh_info >= position:
-        #             print(f"Updating {section.name:16} sh_info from {section.sh_info:4} to {section.sh_info+1:4} ({self.sections[section.sh_info+1].name})")
-        #             section.sh_info += 1
-
+    def add_section(self, section) -> None:
         self.sections.append(section)
         self.e_shnum += 1  # not strictly necessary
 
     def get_relocations(self) -> List["RelocationRecord"]:
         return self.relocations
 
-    def get_functions(self) -> List["Section"]:
+    def get_functions(self) -> List["TextSection"]:
         return self.functions
 
     @staticmethod
     def unpack(data):
-        fmt = "<16sHHIIIIIHHHHHH"
-        return struct.unpack(fmt, data[:0x34])
+        return struct.unpack(Elf.fmt, data[:0x34])
 
     def pack(self):
         elf_header_size = 0x40
@@ -227,8 +226,7 @@ class Elf:
 
         section_headers = bytes()
         section_data = bytes()
-        for i, section in enumerate(self.sections):
-            # print(f"Packing {section.name:16} {i:03} (at 0x{sh_offset:X})", section)
+        for section in self.sections:
             section.sh_offset = sh_offset
             header, data = section.pack()
 
@@ -250,7 +248,7 @@ class Elf:
             sh_offset += bytes_needed
 
         elf_header = struct.pack(
-            "<16sHHIIIIIHHHHHH",
+            Elf.fmt,
             *[
                 self.e_ident,
                 self.e_type,
@@ -271,10 +269,6 @@ class Elf:
 
         elf_header += bytes(0xC)  # pad to 0x40
 
-        # print(f"elf_header size:      0x{len(elf_header):X}")
-        # print(f"section_data size:    0x{len(section_data):X}")
-        # print(f"section_headers size: 0x{len(section_headers):X}")
-
         return elf_header + section_data + section_headers
 
 
@@ -287,6 +281,8 @@ class Symbol:
     st_size: int
 
     name: str
+
+    fmt = "<IIIBBH"
 
     def __init__(
         self,
@@ -323,13 +319,11 @@ class Symbol:
 
     @staticmethod
     def unpack(data):
-        fmt = "<IIIBBH"
-        return struct.unpack(fmt, data)
+        return struct.unpack(Symbol.fmt, data)
 
     def pack(self):
-        fmt = "<IIIBBH"
         return struct.pack(
-            fmt,
+            Symbol.fmt,
             *[
                 self.st_name,
                 self.st_value,
@@ -353,7 +347,9 @@ class Section:
     sh_addralign: int
     sh_entsize: int
 
-    name: str
+    name: Optional[str]
+
+    fmt = "<IIIIIIIIII"
 
     def __init__(
         self,
@@ -388,15 +384,12 @@ class Section:
         return data
 
     @staticmethod
-    def unpack(data):
-        fmt = "<IIIIIIIIII"
-        return struct.unpack(fmt, data[0:0x28])
+    def unpack_header(data):
+        return struct.unpack(Section.fmt, data[0:0x28])
 
     def pack_header(self) -> bytes:
-        fmt = "<IIIIIIIIII"
-
         return struct.pack(
-            fmt,
+            Section.fmt,
             *[
                 self.sh_name,
                 self.sh_type,
@@ -414,14 +407,36 @@ class Section:
     def pack_data(self) -> bytes:
         return self.data
 
-    def pack(self) -> bytes:
+    def pack(self) -> tuple[bytes, bytes]:
         data = self.pack_data()
         header = self.pack_header()
         return (header, data)
 
 
+class TextSection(Section):
+    function_name: str
+
+    @staticmethod
+    def from_section(section) -> "TextSection":
+        return TextSection(
+            section.sh_name,
+            section.sh_type,
+            section.sh_flags,
+            section.sh_addr,
+            section.sh_offset,
+            section.sh_size,
+            section.sh_link,
+            section.sh_info,
+            section.sh_addralign,
+            section.sh_entsize,
+            section.data,
+        )
+
+
 class Symtab(Section):
-    def _handle_data(self, data):
+    symbols: List[Symbol]
+
+    def _handle_data(self, data: bytes) -> bytes:
         self.symbols = []
         ptr = 0
         while ptr < len(data):
@@ -429,13 +444,13 @@ class Symtab(Section):
             ptr += 0x10
         return data
 
-    def get_symbol_by_name(self, name):
+    def get_symbol_by_name(self, name) -> tuple[Optional[int], Optional[Symbol]]:
         for i, symbol in enumerate(self.symbols):
             if symbol.name == name:
-                return i, symbol
+                return (i, symbol)
         return (None, None)
 
-    def add_symbol(self, symbol: Symbol):
+    def add_symbol(self, symbol: Symbol) -> int:
         if symbol.bind == 0:  # STB_LOCAL
             # insert local symbol
             index = self.sh_info
@@ -448,15 +463,15 @@ class Symtab(Section):
         self.symbols.append(symbol)
         return index
 
-    def pack_data(self):
+    def pack_data(self) -> bytes:
         self.data = b"".join(s.pack() for s in self.symbols)
         return self.data
 
 
 class Strtab(Section):
-    symbols = List
+    symbols: List[str]
 
-    def _handle_data(self, data):
+    def _handle_data(self, data: bytes) -> bytes:
         self.symbols = []
 
         ptr = start = 0
@@ -468,16 +483,14 @@ class Strtab(Section):
 
         return data
 
-    def pack_data(self):
+    def pack_data(self) -> bytes:
         self.data = bytes()
         for symbol in self.symbols:
             # print(f"Packing symbol: {symbol}")
             self.data += symbol.encode("utf") + b"\x00"
         return self.data
 
-    def get_symbol_by_index(self, index):
-        if self.data is None:
-            return None
+    def get_symbol_by_index(self, index) -> str:
         ptr = index
         while ptr < len(self.data):
             if self.data[ptr] == 0:
@@ -485,7 +498,7 @@ class Strtab(Section):
             ptr += 1
         raise Exception(f"Symbol not found at index: {index}")
 
-    def add_symbol(self, symbol_name: str):
+    def add_symbol(self, symbol_name: str) -> int:
         encoded_name = symbol_name.encode("utf8") + b"\x00"
         idx = self.data.find(encoded_name)
         if idx != -1:
@@ -498,10 +511,8 @@ class Strtab(Section):
 
 
 class Relocation:
-    # 2: R_MIPS_32
-    # 4: R_MIPS_26
-    # 5: R_MIPS_HI16
-    # 6: R_MIPS_LO16
+    symbol: Optional[Symbol]
+
     def __init__(self, r_offset, r_info):
         self.r_offset = r_offset
         self.r_info = r_info
@@ -509,10 +520,12 @@ class Relocation:
         self.reloc_type = r_info & 0xFF
         self.symbol_index = r_info >> 0x8
 
-    def __str__(self):
+        self.symbol = None
+
+    def __str__(self) -> str:
         return f"r_offset: 0x{self.r_offset:X}, r_info: 0x{self.r_info:X}, reloc_type: 0x{self.reloc_type:X}, symbol_index: 0x{self.symbol_index:X}"
 
-    def pack(self):
+    def pack(self) -> bytes:
         return struct.pack(
             "<II",
             *[
@@ -523,31 +536,14 @@ class Relocation:
 
 
 class RelocationRecord(Section):
-    def _handle_data(self, data):
+    def _handle_data(self, data: bytes) -> bytes:
         self.relocations = [
             Relocation(offset, info)
             for (offset, info) in struct.iter_unpack("<II", data)
         ]
         return data
 
-    def pack_data(self):
+    def pack_data(self) -> bytes:
         # print(f"Packing {len(self.relocations)} relocation(s)")
         self.data = b"".join(r.pack() for r in self.relocations)
         return self.data
-
-
-def main(elf_filepath):
-    with open(elf_filepath, "rb") as f:
-        data = f.read()
-
-    elf = Elf(data)
-
-    new_data = elf.pack()
-    with open("/tmp/out.o", "wb") as f:
-        f.write(new_data)
-
-
-if __name__ == "__main__":
-    import sys
-
-    main(sys.argv[1])

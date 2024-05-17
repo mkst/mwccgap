@@ -5,11 +5,16 @@ import sys
 import tempfile
 
 from pathlib import Path
+from typing import List, Optional
 
-from .elf import Elf
+from .elf import Elf, TextSection
 
 
-def assemble_file(asm_filepath, as_path="mipsel-linux-gnu-as", as_flags=None):
+INCLUDE_ASM = "INCLUDE_ASM"
+INCLUDE_ASM_REGEX = r'INCLUDE_ASM\("(.*)", (.*)\)'
+
+
+def assemble_file(asm_filepath: Path, as_path="mipsel-linux-gnu-as", as_flags: Optional[List[str]]=None) -> bytes:
     if as_flags is None:
         as_flags = []
 
@@ -41,35 +46,36 @@ def assemble_file(asm_filepath, as_path="mipsel-linux-gnu-as", as_flags=None):
     return obj_bytes
 
 
-def preprocess_c_file(c_file):
+def preprocess_c_file(c_file, asm_dir_prefix=None) -> tuple[List[str], List[Path]]:
     with open(c_file, "r") as f:
         lines = f.readlines()
 
-    out_lines = []
-    asm_files = []
+    out_lines: List[str] = []
+    asm_files: List[Path] = []
     for i, line in enumerate(lines):
         line = line.rstrip()
 
-        if line.startswith("INCLUDE_ASM"):
-            match = re.match(r'INCLUDE_ASM\("(.*)", (.*)\)', line)
-            if not match:
+        if line.startswith(INCLUDE_ASM):
+            if not (match := re.match(INCLUDE_ASM_REGEX, line)):
                 raise Exception(
-                    f"{c_file} contains invalid INCLUDE_ASM macro on line {i}: {line}"
+                    f"{c_file} contains invalid {INCLUDE_ASM} macro on line {i}: {line}"
                 )
             try:
                 asm_dir = Path(match.group(1))
                 asm_function = match.group(2)
-                asm_file = "asm/pspeu" / asm_dir / f"{asm_function}.s"
             except Exception as e:
                 raise Exception(
-                    f"{c_file} contains invalid INCLUDE_ASM macro on line {i}: {line} -> {e}"
-                )
+                    f"{c_file} contains invalid {INCLUDE_ASM} macro on line {i}: {line}"
+                ) from e
+
+            asm_file = asm_dir / f"{asm_function}.s"
+            if asm_dir_prefix is not None:
+                asm_file = asm_dir_prefix / asm_file
 
             if not asm_file.is_file():
                 raise Exception(
                     f"{c_file} includes asm {asm_file} that does not exist on line {i}: {line}"
                 )
-
             asm_files.append(asm_file)
 
             nops_needed = 0
@@ -119,14 +125,13 @@ def preprocess_c_file(c_file):
 def compile_file(
     c_file: Path,
     o_file: Path,
-    flags=None,
+    c_flags=None,
     mwcc_path="mwccpsp.exe",
     use_wibo=True,
     wibo_path="wibo",
 ):
-    # sys.stderr.write(f"Compiling {c_filepath} to {o_filepath}\n")
-    if flags is None:
-        flags = []
+    if c_flags is None:
+        c_flags = []
 
     o_file.parent.mkdir(exist_ok=True, parents=True)
     o_file.unlink(missing_ok=True)
@@ -134,7 +139,7 @@ def compile_file(
     cmd = [
         mwcc_path,
         "-c",
-        *flags,
+        *c_flags,
         "-o",
         str(o_file),
         str(c_file),
@@ -161,15 +166,16 @@ def process_c_file(
     as_flags=None,
     use_wibo=True,
     wibo_path="wibo",
+    asm_dir_prefix=None,
 ):
-    # 1. compile file as-is, any INCLUDE_ASM functions will be missing
+    # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing
     # TODO: is there a better way to do this?
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_o_file = Path(temp_dir) / "precompile.o"
         stdout, stderr = compile_file(
             c_file,
             temp_o_file,
-            c_flags,
+            c_flags=c_flags,
             mwcc_path=mwcc_path,
             use_wibo=use_wibo,
             wibo_path=wibo_path,
@@ -193,7 +199,7 @@ def process_c_file(
     c_functions = precompiled_elf.get_functions()
 
     # 2. identify all INCLUDE_ASM statements and replace with asm statements full of nops
-    out_lines, asm_files = preprocess_c_file(c_file)
+    out_lines, asm_files = preprocess_c_file(c_file, asm_dir_prefix=asm_dir_prefix)
 
     # filter out functions that can be found in the compiled c object
     asm_files = [x for x in asm_files if x.stem not in c_functions]
@@ -229,7 +235,7 @@ def process_c_file(
 
     if len(asm_files) == 0:
         sys.stderr.write(
-            f"WARNING: No INCLUDE_ASM macros found in source file {c_file}\n"
+            f"WARNING: No {INCLUDE_ASM} macros found in source file {c_file}\n"
         )
         o_file.parent.mkdir(exist_ok=True, parents=True)
         with o_file.open("wb") as f:
@@ -241,7 +247,6 @@ def process_c_file(
     rel_text_sh_name = compiled_elf.add_sh_symbol(".rel.text")
 
     for asm_file in asm_files:
-        # sys.stderr.write(f"Processing {asm_file}\n")
         function = asm_file.stem
 
         asm_bytes = assemble_file(asm_file, as_path=as_path, as_flags=as_flags)
@@ -251,7 +256,7 @@ def process_c_file(
 
         # identify the .text section for this function
         for index, section in enumerate(compiled_elf.sections):
-            if section.name == ".text" and section.function_name == function:
+            if isinstance(section, TextSection) and section.function_name == function:
                 break
         else:
             raise Exception(f"{function} not found in {c_file}")
@@ -266,7 +271,6 @@ def process_c_file(
         section.data = asm_text[:compiled_function_length]
 
         relocation_records = assembled_elf.get_relocations()
-
         assert (
             len(relocation_records) < 2
         ), f"{asm_file} has too many relocation records!"

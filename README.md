@@ -29,6 +29,9 @@ Whether or not to prefix the call to the MWCC executable with [wibo](https://git
 ### `--wibo-path`
 Path to `wibo` (i.e. if `wibo` is not on your path, or you wish to use `wine` instead), defaults to `wibo`.
 
+### `--asm-dir-prefix`
+Optional prefix for `INCLUDE_ASM` files.
+
 
 ## Limitations
 
@@ -42,6 +45,6 @@ This project is in it's infancy and is full of assumptions, and therefore likely
 
 ## Examples
 
-Projets that use `mwccgap` include:
+Projects that use `mwccgap` include:
 
 - [Castlevania: Symphony of the Night Decompilation](https://github.com/Xeeynamo/sotn-decomp)
