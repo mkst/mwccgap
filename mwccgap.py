@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--as-path", type=str, default="mipsel-linux-gnu-as")
     parser.add_argument("--use-wibo", action="store_true")
     parser.add_argument("--wibo-path", type=str, default="wibo")
+    parser.add_argument("--asm-dir-prefix", type=str)
 
     args, c_flags = parser.parse_known_args()
 
@@ -32,6 +33,7 @@ def main():
             use_wibo=args.use_wibo,
             wibo_path=args.wibo_path,
             as_flags=as_flags,
+            asm_dir_prefix=args.asm_dir_prefix,
         )
     except Exception as e:
         sys.stderr.write(f"Exception processing {args.c_file}: {e}\n")
