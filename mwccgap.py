@@ -18,6 +18,8 @@ def main():
 
     args, c_flags = parser.parse_known_args()
 
+    as_flags = ["-G0"]  # TODO: base this on -sdatathreshold value from c_flags
+
     c_file = Path(args.c_file)
     o_file = Path(args.o_file)
     try:
@@ -29,6 +31,7 @@ def main():
             as_path=args.as_path,
             use_wibo=args.use_wibo,
             wibo_path=args.wibo_path,
+            as_flags=as_flags,
         )
     except Exception as e:
         sys.stderr.write(f"Exception processing {args.c_file}: {e}\n")

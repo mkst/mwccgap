@@ -23,7 +23,6 @@ def assemble_file(asm_filepath, as_path="mipsel-linux-gnu-as", as_flags=None):
             "-o",
             temp_file.name,
             *as_flags,
-            "-G0",  # FIXME: this is an assumption given -sdatathreshold=0
         ]
         with subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE
@@ -37,13 +36,13 @@ def assemble_file(asm_filepath, as_path="mipsel-linux-gnu-as", as_flags=None):
 
         obj_bytes = temp_file.read()
         if len(obj_bytes) == 0:
-            raise Exception("Assembled .s is empty!")
+            raise Exception(f"Failed to assemble {asm_filepath} (object is empty)")
 
     return obj_bytes
 
 
-def preprocess_c_file(filepath):
-    with open(filepath, "r") as f:
+def preprocess_c_file(c_file):
+    with open(c_file, "r") as f:
         lines = f.readlines()
 
     out_lines = []
@@ -54,19 +53,21 @@ def preprocess_c_file(filepath):
         if line.startswith("INCLUDE_ASM"):
             match = re.match(r'INCLUDE_ASM\("(.*)", (.*)\)', line)
             if not match:
-                raise Exception(f"Invalid INCLUDE_ASM macro found on line {i}: {line}")
+                raise Exception(
+                    f"{c_file} contains invalid INCLUDE_ASM macro on line {i}: {line}"
+                )
             try:
                 asm_dir = Path(match.group(1))
                 asm_function = match.group(2)
                 asm_file = "asm/pspeu" / asm_dir / f"{asm_function}.s"
             except Exception as e:
                 raise Exception(
-                    f"Invalid INCLUDE_ASM macro found on line {i}: {line} -> {e}"
+                    f"{c_file} contains invalid INCLUDE_ASM macro on line {i}: {line} -> {e}"
                 )
 
             if not asm_file.is_file():
                 raise Exception(
-                    f"Error loading INCLUDE_ASM asm {asm_file} found on line {i}: {line}"
+                    f"{c_file} includes asm {asm_file} that does not exist on line {i}: {line}"
                 )
 
             asm_files.append(asm_file)
@@ -116,8 +117,8 @@ def preprocess_c_file(filepath):
 
 
 def compile_file(
-    c_filepath: Path,
-    o_filepath: Path,
+    c_file: Path,
+    o_file: Path,
     flags=None,
     mwcc_path="mwccpsp.exe",
     use_wibo=True,
@@ -127,16 +128,16 @@ def compile_file(
     if flags is None:
         flags = []
 
-    o_filepath.parent.mkdir(exist_ok=True, parents=True)
-    o_filepath.unlink(missing_ok=True)
+    o_file.parent.mkdir(exist_ok=True, parents=True)
+    o_file.unlink(missing_ok=True)
 
     cmd = [
         mwcc_path,
         "-c",
         *flags,
         "-o",
-        str(o_filepath),
-        str(c_filepath),
+        str(o_file),
+        str(c_file),
     ]
     if use_wibo:
         cmd.insert(0, wibo_path)
@@ -180,11 +181,11 @@ def process_c_file(
             sys.stderr.write(stderr.decode("utf"))
 
         if not temp_o_file.is_file():
-            raise Exception(f"Compilation of {c_file} failed!")
+            raise Exception(f"Error precompiling {c_file}")
 
         obj_bytes = temp_o_file.read_bytes()
         if len(obj_bytes) == 0:
-            raise Exception(f"{temp_o_file} is empty!")
+            raise Exception(f"Error precompiling {c_file}, object is empty")
 
     precompiled_elf = Elf(obj_bytes)
 
@@ -199,14 +200,14 @@ def process_c_file(
 
     # 3. compile the modified .c file for real
     with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
-        temp_c_file.write("\n".join(out_lines).encode("utf8"))
+        temp_c_file.write("\n".join(out_lines).encode("utf"))
         temp_c_file.flush()
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_o_file = Path(temp_dir) / "result.o"
 
             stdout, stderr = compile_file(
-                temp_c_file.name,
+                Path(temp_c_file.name),
                 temp_o_file,
                 c_flags,
                 mwcc_path=mwcc_path,
@@ -220,12 +221,17 @@ def process_c_file(
                 sys.stderr.write(stderr.decode("utf"))
 
             if not temp_o_file.is_file():
-                raise Exception(f"{temp_o_file} does not exist!")
+                raise Exception(f"Error compiling {c_file}")
 
             obj_bytes = temp_o_file.read_bytes()
+            if len(obj_bytes) == 0:
+                raise Exception(f"Error compiling {c_file}, object is empty")
 
     if len(asm_files) == 0:
-        sys.stderr.write("WARNING: No INCLUDE_ASM macros found in source file!\n")
+        sys.stderr.write(
+            f"WARNING: No INCLUDE_ASM macros found in source file {c_file}\n"
+        )
+        o_file.parent.mkdir(exist_ok=True, parents=True)
         with o_file.open("wb") as f:
             f.write(obj_bytes)
         return
@@ -248,20 +254,22 @@ def process_c_file(
             if section.name == ".text" and section.function_name == function:
                 break
         else:
-            raise Exception(f"Function {function} not found in C file!")
+            raise Exception(f"{function} not found in {c_file}")
 
         asm_text = asm_functions[0].data
         compiled_function_length = len(section.data)
 
         assert (
             len(asm_text) >= compiled_function_length
-        ), "Not enough assembly to fill the function!"
+        ), f"Not enough assembly to fill {function} in {c_file}"
 
         section.data = asm_text[:compiled_function_length]
 
         relocation_records = assembled_elf.get_relocations()
 
-        assert len(relocation_records) < 2, "Too many relocation records!"
+        assert (
+            len(relocation_records) < 2
+        ), f"{asm_file} has too many relocation records!"
 
         reloc_symbols = set()
         for relocation_record in relocation_records:
