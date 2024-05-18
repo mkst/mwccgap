@@ -35,7 +35,7 @@ def assemble_file(asm_filepath: Path, as_path="mipsel-linux-gnu-as", as_flags: O
             stdout, stderr = process.communicate(input=asm_filepath.read_bytes())
 
         if len(stdout) > 0:
-            sys.stdout.write(stdout.decode("utf"))
+            sys.stderr.write(stdout.decode("utf"))
         if len(stderr) > 0:
             sys.stderr.write(stderr.decode("utf"))
 
@@ -182,7 +182,7 @@ def process_c_file(
         )
 
         if len(stdout) > 0:
-            sys.stdout.write(stdout.decode("utf"))
+            sys.stderr.write(stdout.decode("utf"))
         if len(stderr) > 0:
             sys.stderr.write(stderr.decode("utf"))
 
@@ -222,7 +222,7 @@ def process_c_file(
             )
 
             if len(stdout) > 0:
-                sys.stdout.write(stdout.decode("utf"))
+                sys.stderr.write(stdout.decode("utf"))
             if len(stderr) > 0:
                 sys.stderr.write(stderr.decode("utf"))
 
