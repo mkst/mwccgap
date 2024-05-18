@@ -13,6 +13,8 @@ from .elf import Elf, TextSection
 INCLUDE_ASM = "INCLUDE_ASM"
 INCLUDE_ASM_REGEX = r'INCLUDE_ASM\("(.*)", (.*)\)'
 
+FUNCTION_PREFIX = "mwccgap_"
+
 
 def assemble_file(asm_filepath: Path, as_path="mipsel-linux-gnu-as", as_flags: Optional[List[str]]=None) -> bytes:
     if as_flags is None:
@@ -114,7 +116,7 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> tuple[List[str], List[Path
             # TODO: align to 8 bytes for asm-differ?
 
             nops = nops_needed * ["nop"]
-            out_lines.extend([f"asm void {asm_function}() {'{'}", *nops, "}"])
+            out_lines.extend([f"asm void {FUNCTION_PREFIX}{asm_function}() {'{'}", *nops, "}"])
 
         else:
             out_lines.append(line)
@@ -246,6 +248,11 @@ def process_c_file(
 
     rel_text_sh_name = compiled_elf.add_sh_symbol(".rel.text")
 
+    for symbol in compiled_elf.symtab.symbols:
+        if symbol.name.startswith(FUNCTION_PREFIX):
+            symbol.name = symbol.name[len(FUNCTION_PREFIX):]
+            symbol.st_name += len(FUNCTION_PREFIX)
+
     for asm_file in asm_files:
         function = asm_file.stem
 
@@ -256,7 +263,7 @@ def process_c_file(
 
         # identify the .text section for this function
         for index, section in enumerate(compiled_elf.sections):
-            if isinstance(section, TextSection) and section.function_name == function:
+            if isinstance(section, TextSection) and section.function_name == f"{FUNCTION_PREFIX}{function}":
                 break
         else:
             raise Exception(f"{function} not found in {c_file}")
