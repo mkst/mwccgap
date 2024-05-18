@@ -196,7 +196,7 @@ def process_c_file(
     precompiled_elf = Elf(obj_bytes)
 
     # for now we only care about the names of the functions that exist
-    c_functions = precompiled_elf.get_functions()
+    c_functions = [f.function_name for f in precompiled_elf.get_functions()]
 
     # 2. identify all INCLUDE_ASM statements and replace with asm statements full of nops
     out_lines, asm_files = preprocess_c_file(c_file, asm_dir_prefix=asm_dir_prefix)
