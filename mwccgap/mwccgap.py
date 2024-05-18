@@ -205,7 +205,7 @@ def process_c_file(
     asm_files = [x for x in asm_files if x.stem not in c_functions]
 
     # 3. compile the modified .c file for real
-    with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
+    with tempfile.NamedTemporaryFile(suffix=".c_", dir=c_file.parent) as temp_c_file:
         temp_c_file.write("\n".join(out_lines).encode("utf"))
         temp_c_file.flush()
 
