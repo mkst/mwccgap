@@ -171,7 +171,6 @@ def process_c_file(
     asm_dir_prefix=None,
 ):
     # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing
-    # TODO: is there a better way to do this?
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_o_file = Path(temp_dir) / "precompile.o"
         stdout, stderr = compile_file(
@@ -197,14 +196,21 @@ def process_c_file(
 
     precompiled_elf = Elf(obj_bytes)
 
-    # for now we only care about the names of the functions that exist
-    c_functions = [f.function_name for f in precompiled_elf.get_functions()]
-
     # 2. identify all INCLUDE_ASM statements and replace with asm statements full of nops
     out_lines, asm_files = preprocess_c_file(c_file, asm_dir_prefix=asm_dir_prefix)
 
+    # for now we only care about the names of the functions that exist
+    c_functions = [f.function_name for f in precompiled_elf.get_functions()]
+
     # filter out functions that can be found in the compiled c object
     asm_files = [x for x in asm_files if x.stem not in c_functions]
+
+    # if there's nothing to do, write out the bytes from the precompiled object
+    if len(asm_files) == 0:
+        o_file.parent.mkdir(exist_ok=True, parents=True)
+        with o_file.open("wb") as f:
+            f.write(obj_bytes)
+        return
 
     # 3. compile the modified .c file for real
     with tempfile.NamedTemporaryFile(suffix=".c_", dir=c_file.parent) as temp_c_file:
@@ -234,15 +240,6 @@ def process_c_file(
             obj_bytes = temp_o_file.read_bytes()
             if len(obj_bytes) == 0:
                 raise Exception(f"Error compiling {c_file}, object is empty")
-
-    if len(asm_files) == 0:
-        sys.stderr.write(
-            f"WARNING: No {INCLUDE_ASM} macros found in source file {c_file}\n"
-        )
-        o_file.parent.mkdir(exist_ok=True, parents=True)
-        with o_file.open("wb") as f:
-            f.write(obj_bytes)
-        return
 
     compiled_elf = Elf(obj_bytes)
 
