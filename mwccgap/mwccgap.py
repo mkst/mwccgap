@@ -339,7 +339,6 @@ def process_c_file(
 
         if has_rodata:
             rodata_section.data = asm_rodata.data
-
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
         relocation_records = assembled_elf.get_relocations()
@@ -359,7 +358,7 @@ def process_c_file(
                 relocation_record.sh_name = rel_text_sh_name
                 relocation_record.sh_info = text_section_index
             if i == 1:
-                rel_text_sh_name = rel_rodata_sh_name
+                relocation_record.sh_name = rel_rodata_sh_name
                 relocation_record.sh_info = rodata_section_index
 
             for relocation in relocation_record.relocations:
