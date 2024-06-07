@@ -16,7 +16,11 @@ INCLUDE_ASM_REGEX = r'INCLUDE_ASM\("(.*)", (.*)\)'
 FUNCTION_PREFIX = "mwccgap_"
 
 
-def assemble_file(asm_filepath: Path, as_path="mipsel-linux-gnu-as", as_flags: Optional[List[str]]=None) -> bytes:
+def assemble_file(
+    asm_filepath: Path,
+    as_path="mipsel-linux-gnu-as",
+    as_flags: Optional[List[str]] = None,
+) -> bytes:
     if as_flags is None:
         as_flags = []
 
@@ -80,12 +84,41 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> tuple[List[str], List[Path
                 )
             asm_files.append(asm_file)
 
+            in_rodata = False
+            rodata_entries = {}
             nops_needed = 0
+
             for asm_line in asm_file.read_text().split("\n"):
                 asm_line = asm_line.strip()
                 if not asm_line:
-                    # skip empty
+                    # skip empty lines
                     continue
+
+                if asm_line.startswith(".section"):
+                    if asm_line.endswith(".text"):
+                        in_rodata = False
+                        continue
+                    elif asm_line.endswith(".rodata"):
+                        in_rodata = True
+                        continue
+
+                    raise Exception(f"Unsupported .section: {asm_line}")
+
+                if in_rodata:
+                    if asm_line.startswith(".align"):
+                        continue
+                    if asm_line.startswith(".size"):
+                        continue
+                    if asm_line.startswith("glabel"):
+                        _, rodata_symbol = asm_line.split(" ")
+                        rodata_entries[rodata_symbol] = 0
+                        continue
+                    if asm_line.find(" .word ") > -1:
+                        rodata_entries[rodata_symbol] += 4
+                        continue
+
+                    raise Exception(f"Unexpected entry in .rodata: {asm_line}")
+
                 if asm_line.startswith(".set"):
                     # ignore set
                     continue
@@ -108,15 +141,20 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> tuple[List[str], List[Path
                     # ignore spim
                     continue
 
-                if ".rodata" in asm_line:
-                    raise Exception("RODATA IS NOT CURRENTLY SUPPORTED!")
-
                 nops_needed += 1
 
-            # TODO: align to 8 bytes for asm-differ?
-
             nops = nops_needed * ["nop"]
-            out_lines.extend([f"asm void {FUNCTION_PREFIX}{asm_function}() {'{'}", *nops, "}"])
+            out_lines.extend(
+                [f"asm void {FUNCTION_PREFIX}{asm_function}() {'{'}", *nops, "}"]
+            )
+
+            for symbol, size in rodata_entries.items():
+                words_needed = size // 4
+                out_lines.append(
+                    f"const long {symbol}[{words_needed}] = {'{'}"
+                    + words_needed * "0, "
+                    + "};",
+                )
 
         else:
             out_lines.append(line)
@@ -213,7 +251,7 @@ def process_c_file(
         return
 
     # 3. compile the modified .c file for real
-    with tempfile.NamedTemporaryFile(suffix=".c_", dir=c_file.parent) as temp_c_file:
+    with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
         temp_c_file.write("\n".join(out_lines).encode("utf"))
         temp_c_file.flush()
 
@@ -247,7 +285,7 @@ def process_c_file(
 
     for symbol in compiled_elf.symtab.symbols:
         if symbol.name.startswith(FUNCTION_PREFIX):
-            symbol.name = symbol.name[len(FUNCTION_PREFIX):]
+            symbol.name = symbol.name[len(FUNCTION_PREFIX) :]
             symbol.st_name += len(FUNCTION_PREFIX)
 
     for asm_file in asm_files:
@@ -259,45 +297,104 @@ def process_c_file(
         assert len(asm_functions) == 1, "Only support 1 function per asm file"
 
         # identify the .text section for this function
-        for index, section in enumerate(compiled_elf.sections):
-            if isinstance(section, TextSection) and section.function_name == f"{FUNCTION_PREFIX}{function}":
+        for text_section_index, text_section in enumerate(compiled_elf.sections):
+            if (
+                isinstance(text_section, TextSection)
+                and text_section.function_name == f"{FUNCTION_PREFIX}{function}"
+            ):
                 break
         else:
             raise Exception(f"{function} not found in {c_file}")
 
+        rodata_section_index = -1
+        for i, rodata_section in enumerate(
+            compiled_elf.sections[text_section_index + 1 :]
+        ):
+            if rodata_section.name == "":
+                # found another .text section before .rodata
+                rodata_section_index = -1
+                break
+            if rodata_section.name == ".rodata":
+                # found .rodata before another .text section
+                rodata_section_index = text_section_index + 1 + i
+                break
+
         asm_text = asm_functions[0].data
-        compiled_function_length = len(section.data)
+        compiled_function_length = len(text_section.data)
+
+        has_rodata = rodata_section_index > -1
+
+        if has_rodata:
+            assert (
+                len(assembled_elf.rodata_sections) == 1
+            ), "Expected ASM to contain 1 .rodata section"
+            asm_rodata = assembled_elf.rodata_sections[0]
+            print(rodata_section)
 
         assert (
             len(asm_text) >= compiled_function_length
         ), f"Not enough assembly to fill {function} in {c_file}"
 
-        section.data = asm_text[:compiled_function_length]
+        text_section.data = asm_text[:compiled_function_length]
+
+        if has_rodata:
+            rodata_section.data = asm_rodata.data
+
+            rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
         relocation_records = assembled_elf.get_relocations()
         assert (
-            len(relocation_records) < 2
+            len(relocation_records) < 3
         ), f"{asm_file} has too many relocation records!"
 
         reloc_symbols = set()
-        for relocation_record in relocation_records:
+
+        initial_sh_info_value = compiled_elf.symtab.sh_info
+        local_syms_inserted = 0
+
+        # assumes .text relocations precede .rodata relocations
+        for i, relocation_record in enumerate(relocation_records):
             relocation_record.sh_link = compiled_elf.symtab_index
-            relocation_record.sh_name = rel_text_sh_name
-            relocation_record.sh_info = index
+            if i == 0:
+                relocation_record.sh_name = rel_text_sh_name
+                relocation_record.sh_info = text_section_index
+            if i == 1:
+                rel_text_sh_name = rel_rodata_sh_name
+                relocation_record.sh_info = rodata_section_index
 
             for relocation in relocation_record.relocations:
                 symbol = assembled_elf.symtab.symbols[relocation.symbol_index]
-                idx = compiled_elf.add_symbol(symbol)
+
+                if symbol.bind == 0:
+                    local_syms_inserted += 1
+
+                idx = compiled_elf.add_symbol(symbol, force=i == 1)
                 relocation.symbol_index = idx
                 reloc_symbols.add(symbol.name)
 
+                if i == 1:
+                    # repoint .rodata reloc to .text section
+                    symbol.st_shndx = text_section_index
+
             compiled_elf.add_section(relocation_record)
+
+        if local_syms_inserted > 0:
+            # update relocations
+            for relocation_record in compiled_elf.get_relocations():
+
+                if relocation_record.sh_info == rodata_section_index:
+                    # don't touch the .rodata relocs...
+                    continue
+
+                for relocation in relocation_record.relocations:
+                    if relocation.symbol_index >= initial_sh_info_value:
+                        relocation.symbol_index += local_syms_inserted
 
         for symbol in assembled_elf.symtab.symbols:
             if symbol.st_name == 0:
                 continue
             if symbol.name not in reloc_symbols:
-                symbol.st_shndx = index
+                symbol.st_shndx = text_section_index
                 compiled_elf.add_symbol(symbol)
 
     o_file.parent.mkdir(exist_ok=True, parents=True)

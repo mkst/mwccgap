@@ -51,6 +51,10 @@ class Elf:
         self.relocations: List[RelocationRecord] = []
         self.functions: List[TextSection] = []
 
+        self.rodata_sections: List[Section] = []
+
+        # self.rodata_refs: dict[Symbol, set] = {}
+
         self.symtab = None  # type: ignore
         self.shstrtab = None  # type: ignore
         self.strtab = None  # type: ignore
@@ -192,22 +196,51 @@ class Elf:
                         function_name = function_names[len(self.functions)]
                         text_section.function_name = function_name
                     self.functions.append(text_section)
+                elif section.name == ".rodata":
+                    self.rodata_sections.append(section)
+
+        # for i, symbol in enumerate(self.symtab.symbols):
+        #     if self.sections[symbol.st_shndx].name == ".rodata":
+        #         if symbol.st_name == 0:
+        #             # assume this is an assembly file without symbols ?
+        #             continue
+
+        #         # this is a rodata symbol, we need to find it's corresponding reloc
+        #         # the reloc will point to the corresponding .text section(s) that reference the symbol
+        #         reloc_sh_infos = set()
+        #         for reloc in self.relocations:
+        #             for relocation in reloc.relocations:
+        #                 if relocation.symbol_index == i:
+        #                     reloc_sh_infos.add(reloc.sh_info)
+
+        #         if len(reloc_sh_infos) == 0:
+        #             raise Exception(f"No relocation record found for .rodata symbol {symbol.name}")
+        #         self.rodata_refs[symbol] = reloc_sh_infos
+
+        # for k, vs in self.rodata_refs.items():
+        #     for v in vs:
+        #         print(f"name: {k.name}, section index: {k.st_shndx}, function: {self.sections[v].function_name}")
 
     def add_sh_symbol(self, symbol_name: str):
         return self.shstrtab.add_symbol(symbol_name)
 
-    def add_symbol(self, symbol: "Symbol") -> int:
+    def add_symbol(self, symbol: "Symbol", force=False) -> int:
         index, _ = self.symtab.get_symbol_by_name(symbol.name)
-        if index is not None:
-            return index
+        if index is None or force:
+            if symbol.name != "":
+                symbol.st_name = self.strtab.add_symbol(symbol.name)
+            index = self.symtab.add_symbol(symbol)
 
-        symbol.st_name = self.strtab.add_symbol(symbol.name)
-        index = self.symtab.add_symbol(symbol)
         return index
 
-    def add_section(self, section) -> None:
+    def add_section(self, section) -> int:
         self.sections.append(section)
         self.e_shnum += 1  # not strictly necessary
+
+        if isinstance(section, RelocationRecord):
+            self.relocations.append(section)
+
+        return len(self.sections) - 1
 
     def get_relocations(self) -> List["RelocationRecord"]:
         return self.relocations
@@ -380,6 +413,9 @@ class Section:
 
         self.name = ""
 
+    def __str__(self):
+        return f"sh_name: 0x{self.sh_name:X} sh_type: 0x{self.sh_type:X} sh_flags: 0x{self.sh_flags:X} sh_addr: 0x{self.sh_addr:X} sh_offset: 0x{self.sh_offset:X} sh_size: 0x{self.sh_size:X} sh_link: 0x{self.sh_link:X} sh_info: 0x{self.sh_info:X} sh_addralign: 0x{self.sh_addralign:X} sh_entsize: 0x{self.sh_entsize:X}"
+
     def _handle_data(self, data):
         return data
 
@@ -414,7 +450,7 @@ class Section:
 
 
 class TextSection(Section):
-    function_name: str
+    function_name: str = ""
 
     @staticmethod
     def from_section(section) -> "TextSection":
@@ -451,8 +487,9 @@ class Symtab(Section):
         return (None, None)
 
     def add_symbol(self, symbol: Symbol) -> int:
+        # sh_info is the index of the first non-local symbol.
         if symbol.bind == 0:  # STB_LOCAL
-            # insert local symbol
+            # insert local symbol before sh_info
             index = self.sh_info
             self.symbols.insert(index, symbol)
             self.sh_info += 1
