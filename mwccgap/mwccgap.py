@@ -329,7 +329,6 @@ def process_c_file(
                 len(assembled_elf.rodata_sections) == 1
             ), "Expected ASM to contain 1 .rodata section"
             asm_rodata = assembled_elf.rodata_sections[0]
-            print(rodata_section)
 
         assert (
             len(asm_text) >= compiled_function_length
@@ -392,6 +391,11 @@ def process_c_file(
         for symbol in assembled_elf.symtab.symbols:
             if symbol.st_name == 0:
                 continue
+
+            if symbol.bind == 0:
+                # ignore local symbols
+                continue
+
             if symbol.name not in reloc_symbols:
                 symbol.st_shndx = text_section_index
                 compiled_elf.add_symbol(symbol)

@@ -6,13 +6,13 @@ The MWCC compiler *does* support including raw assembly within a C file, however
 
 Where `asm-processor` uses an `GLOBAL_ASM` pragma, `mwccgap` uses `INCLUDE_ASM` macro as the first project to use `mwccgap` uses `gcc`. In future support might be added to suppport either approach.
 
-Functions that are `INCLUDE_ASM`'d within the C file are expanded to `nops` of the appropriate size and the C file is compiled. These functions are then assembled separately, and the resulting object data is transplanted into the C object. Symbols and relocations are updated as necessary.
+Functions that are `INCLUDE_ASM`'d within the C file are expanded to `nop`s of the appropriate size and the C file is compiled. These functions are then assembled separately, and the resulting object data is transplanted into the C object. Symbols and relocations are updated as necessary.
 
 
 ## Usage
 
 ```
-mwccgap input.c output.o
+mwccgap input.c output.o [ -O4,p -sym on ... ]
 ```
 
 `mwccgap` supports the following arguments:
@@ -32,6 +32,8 @@ Path to `wibo` (i.e. if `wibo` is not on your path, or you wish to use `wine` in
 ### `--asm-dir-prefix`
 Optional prefix for `INCLUDE_ASM` files.
 
+
+All additional arguments will be passed to the MWCC executable.
 
 ## Limitations
 
