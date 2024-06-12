@@ -5,7 +5,7 @@ import sys
 import tempfile
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .elf import Elf, TextSection
 
@@ -52,7 +52,7 @@ def assemble_file(
     return obj_bytes
 
 
-def preprocess_c_file(c_file, asm_dir_prefix=None) -> tuple[List[str], List[Path]]:
+def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path]]:
     with open(c_file, "r") as f:
         lines = f.readlines()
 

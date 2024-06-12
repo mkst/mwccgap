@@ -1,5 +1,5 @@
 import struct
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 class Elf:
@@ -175,7 +175,7 @@ class Elf:
         function_names = [
             s.name
             for s in sorted(
-                filter(lambda x: x.st_info == 0x12, self.symtab.symbols),
+                filter(lambda x: x.st_info in (0x12, 0x02), self.symtab.symbols),
                 key=lambda x: x.st_shndx,
             )
         ]
@@ -443,7 +443,7 @@ class Section:
     def pack_data(self) -> bytes:
         return self.data
 
-    def pack(self) -> tuple[bytes, bytes]:
+    def pack(self) -> Tuple[bytes, bytes]:
         data = self.pack_data()
         header = self.pack_header()
         return (header, data)
@@ -480,7 +480,7 @@ class Symtab(Section):
             ptr += 0x10
         return data
 
-    def get_symbol_by_name(self, name) -> tuple[Optional[int], Optional[Symbol]]:
+    def get_symbol_by_name(self, name) -> Tuple[Optional[int], Optional[Symbol]]:
         for i, symbol in enumerate(self.symbols):
             if symbol.name == name:
                 return (i, symbol)
