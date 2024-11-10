@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 import subprocess
@@ -309,29 +310,36 @@ def process_c_file(
         else:
             raise Exception(f"{function} not found in {c_file}")
 
-        rodata_section_index = -1
+        rodata_section_begin = -1
         for i, rodata_section in enumerate(
             compiled_elf.sections[text_section_index + 1 :]
         ):
             if rodata_section.name == "":
                 # found another .text section before .rodata
-                rodata_section_index = -1
+                rodata_section_begin = -1
                 break
             if rodata_section.name == ".rodata":
                 # found .rodata before another .text section
-                rodata_section_index = text_section_index + 1 + i
+                rodata_section_begin = text_section_index + 1 + i
                 break
 
         asm_text = asm_functions[0].data
         compiled_function_length = len(text_section.data)
 
-        has_rodata = rodata_section_index > -1
+        has_rodata = rodata_section_begin > -1
 
         if has_rodata:
             assert (
                 len(assembled_elf.rodata_sections) == 1
             ), "Expected ASM to contain 1 .rodata section"
             asm_rodata = assembled_elf.rodata_sections[0]
+            rodata_section_end = rodata_section_begin + 1
+            for i, rodata_section in enumerate(
+                compiled_elf.sections[rodata_section_begin + 1 :]
+            ):
+                if rodata_section.name != ".rodata":
+                    rodata_section_end = rodata_section_begin + 1 + i
+                    break
 
         assert (
             len(asm_text) >= compiled_function_length
@@ -340,7 +348,13 @@ def process_c_file(
         text_section.data = asm_text[:compiled_function_length]
 
         if has_rodata:
-            rodata_section.data = asm_rodata.data
+            data_to_transfer = asm_rodata.data
+            for i in range(rodata_section_begin, rodata_section_end):
+                compiled_elf.sections[i].data = data_to_transfer[:compiled_elf.sections[i].sh_size]
+                data_to_transfer = data_to_transfer[compiled_elf.sections[i].sh_size:]
+            # assert (
+            #     len(data_to_transfer) == 0
+            # ), f"Expected to consume all .rodata data, but {len(data_to_transfer)} remained"
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
         relocation_records = assembled_elf.get_relocations()
@@ -361,31 +375,49 @@ def process_c_file(
                 relocation_record.sh_info = text_section_index
             if i == 1:
                 relocation_record.sh_name = rel_rodata_sh_name
-                relocation_record.sh_info = rodata_section_index
+                for j in range(rodata_section_begin, rodata_section_end):
+                    new_relocation_record = copy.deepcopy(relocation_record)
+                    new_relocation_record.sh_info = j
+                    word_count = compiled_elf.sections[j].sh_size // 4
+                    new_relocation_record.relocations = new_relocation_record.relocations[:word_count]
+                    for relocation in new_relocation_record.relocations:
+                        symbol = assembled_elf.symtab.symbols[relocation.symbol_index]
+                        if symbol.bind == 0:
+                            local_syms_inserted += 1
 
-            for relocation in relocation_record.relocations:
-                symbol = assembled_elf.symtab.symbols[relocation.symbol_index]
+                        idx = compiled_elf.add_symbol(symbol, force=i == 1)
+                        relocation.symbol_index = idx
+                        reloc_symbols.add(symbol.name)
 
-                if symbol.bind == 0:
-                    local_syms_inserted += 1
+                        if i == 1:
+                            # repoint .rodata reloc to .text section
+                            symbol.st_shndx = text_section_index
+                    compiled_elf.add_section(relocation_record)
+                continue
+            else:
+                for relocation in relocation_record.relocations:
+                    symbol = assembled_elf.symtab.symbols[relocation.symbol_index]
 
-                idx = compiled_elf.add_symbol(symbol, force=i == 1)
-                relocation.symbol_index = idx
-                reloc_symbols.add(symbol.name)
+                    if symbol.bind == 0:
+                        local_syms_inserted += 1
 
-                if i == 1:
-                    # repoint .rodata reloc to .text section
-                    symbol.st_shndx = text_section_index
+                    idx = compiled_elf.add_symbol(symbol, force=i == 1)
+                    relocation.symbol_index = idx
+                    reloc_symbols.add(symbol.name)
 
-            compiled_elf.add_section(relocation_record)
+                    if i == 1:
+                        # repoint .rodata reloc to .text section
+                        symbol.st_shndx = text_section_index
+                compiled_elf.add_section(relocation_record)
 
         if local_syms_inserted > 0:
             # update relocations
             for relocation_record in compiled_elf.get_relocations():
-
-                if relocation_record.sh_info == rodata_section_index:
-                    # don't touch the .rodata relocs...
-                    continue
+                if has_rodata:
+                    #if relocation_record.sh_info == rodata_section_begin:
+                    if relocation_record.sh_info >= rodata_section_begin and relocation_record.sh_info < rodata_section_end:
+                        # don't touch the .rodata relocs...
+                        continue
 
                 for relocation in relocation_record.relocations:
                     if relocation.symbol_index >= initial_sh_info_value:
