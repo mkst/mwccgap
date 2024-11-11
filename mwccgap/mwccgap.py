@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 import subprocess
@@ -7,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .elf import Elf, TextSection
+from .elf import Elf, TextSection, Relocation
 
 
 INCLUDE_ASM = "INCLUDE_ASM"
@@ -141,7 +142,7 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path
                     # ignore spim
                     continue
                 if asm_line.startswith("/* Handwritten function"):
-                    #ignore handwritten comment
+                    # ignore handwritten comment
                     continue
 
                 nops_needed += 1
@@ -309,29 +310,19 @@ def process_c_file(
         else:
             raise Exception(f"{function} not found in {c_file}")
 
-        rodata_section_index = -1
+        rodata_section_indices = []
         for i, rodata_section in enumerate(
             compiled_elf.sections[text_section_index + 1 :]
         ):
             if rodata_section.name == "":
                 # found another .text section before .rodata
-                rodata_section_index = -1
                 break
             if rodata_section.name == ".rodata":
-                # found .rodata before another .text section
-                rodata_section_index = text_section_index + 1 + i
-                break
+                # found some .rodata before another .text section
+                rodata_section_indices.append(text_section_index + 1 + i)
 
         asm_text = asm_functions[0].data
         compiled_function_length = len(text_section.data)
-
-        has_rodata = rodata_section_index > -1
-
-        if has_rodata:
-            assert (
-                len(assembled_elf.rodata_sections) == 1
-            ), "Expected ASM to contain 1 .rodata section"
-            asm_rodata = assembled_elf.rodata_sections[0]
 
         assert (
             len(asm_text) >= compiled_function_length
@@ -339,8 +330,23 @@ def process_c_file(
 
         text_section.data = asm_text[:compiled_function_length]
 
-        if has_rodata:
-            rodata_section.data = asm_rodata.data
+        if len(rodata_section_indices) > 0:
+            assert (
+                len(assembled_elf.rodata_sections) == 1
+            ), "Expected ASM to contain 1 .rodata section"
+            asm_rodata = assembled_elf.rodata_sections[0]
+
+            offset = 0
+            rodata_section_offsets = []
+            for index in rodata_section_indices:
+                # copy slices of rodata from ASM object into each .rodata section
+                data_len = len(compiled_elf.sections[index].data)
+                compiled_elf.sections[index].data = asm_rodata.data[
+                    offset : offset + data_len
+                ]
+                offset += data_len
+                rodata_section_offsets.append(offset)
+
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
         relocation_records = assembled_elf.get_relocations()
@@ -361,7 +367,7 @@ def process_c_file(
                 relocation_record.sh_info = text_section_index
             if i == 1:
                 relocation_record.sh_name = rel_rodata_sh_name
-                relocation_record.sh_info = rodata_section_index
+                relocation_record.sh_info = rodata_section_indices[0]
 
             for relocation in relocation_record.relocations:
                 symbol = assembled_elf.symtab.symbols[relocation.symbol_index]
@@ -379,17 +385,47 @@ def process_c_file(
 
             compiled_elf.add_section(relocation_record)
 
+        new_rodata_relocs = []
         if local_syms_inserted > 0:
             # update relocations
             for relocation_record in compiled_elf.get_relocations():
+                if relocation_record.sh_info == rodata_section_indices[0]:
+                    if len(rodata_section_indices) == 1:
+                        # nothing to do when only a single .rodata section
+                        continue
 
-                if relocation_record.sh_info == rodata_section_index:
-                    # don't touch the .rodata relocs...
+                    # otherwise we need to split the rodata relocations across each .rodata section
+                    new_relocations: List[List[Relocation]] = [
+                        [] for _ in rodata_section_indices
+                    ]
+                    for relocation in relocation_record.relocations:
+                        for i in range(len(rodata_section_offsets)):
+                            if relocation.r_offset < rodata_section_offsets[i]:
+                                if i > 0:
+                                    relocation.r_offset -= rodata_section_offsets[i - 1]
+                                new_relocations[i].append(relocation)
+                                break
+
+                    for i, relocations in enumerate(new_relocations):
+                        if i == 0:
+                            # amend original in place
+                            new_rodata_reloc = relocation_record
+                        else:
+                            # take a copy of the original
+                            new_rodata_reloc = copy.copy(relocation_record)
+
+                        new_rodata_reloc.relocations = relocations
+                        new_rodata_reloc.sh_info = rodata_section_indices[i]
+                        new_rodata_relocs.append(new_rodata_reloc)
+
                     continue
 
                 for relocation in relocation_record.relocations:
                     if relocation.symbol_index >= initial_sh_info_value:
                         relocation.symbol_index += local_syms_inserted
+
+            for new_rodata_reloc in new_rodata_relocs[1:]:
+                compiled_elf.add_section(new_rodata_reloc)
 
         for symbol in assembled_elf.symtab.symbols:
             if symbol.st_name == 0:

@@ -416,7 +416,7 @@ class Section:
     def __str__(self):
         return f"sh_name: 0x{self.sh_name:X} sh_type: 0x{self.sh_type:X} sh_flags: 0x{self.sh_flags:X} sh_addr: 0x{self.sh_addr:X} sh_offset: 0x{self.sh_offset:X} sh_size: 0x{self.sh_size:X} sh_link: 0x{self.sh_link:X} sh_info: 0x{self.sh_info:X} sh_addralign: 0x{self.sh_addralign:X} sh_entsize: 0x{self.sh_entsize:X}"
 
-    def _handle_data(self, data):
+    def _handle_data(self, data: bytes) -> bytes:
         return data
 
     @staticmethod
