@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .elf import Elf, TextSection
+from .elf import Elf, TextSection, Relocation
 
 
 INCLUDE_ASM = "INCLUDE_ASM"
@@ -337,14 +337,14 @@ def process_c_file(
             ), "Expected ASM to contain 1 .rodata section"
             asm_rodata = assembled_elf.rodata_sections[0]
 
-            consumed = 0
+            offset = 0
             for index in rodata_section_indices:
                 # copy slices of rodata from ASM object into each .rodata section
                 data_len = len(compiled_elf.sections[index].data)
                 compiled_elf.sections[index].data = asm_rodata.data[
-                    consumed : consumed + data_len
+                    offset : offset + data_len
                 ]
-                consumed += data_len
+                offset += data_len
 
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
@@ -400,7 +400,9 @@ def process_c_file(
                             for i in rodata_section_indices
                         )
                     )
-                    new_relocations = [[] for _ in rodata_section_indices]
+                    new_relocations: List[List[Relocation]] = [
+                        [] for _ in rodata_section_indices
+                    ]
                     for relocation in relocation_record.relocations:
                         for i in range(len(buckets)):
                             if relocation.r_offset < buckets[i]:
