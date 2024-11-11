@@ -1,5 +1,4 @@
 import copy
-import itertools
 import os
 import re
 import subprocess
@@ -338,6 +337,7 @@ def process_c_file(
             asm_rodata = assembled_elf.rodata_sections[0]
 
             offset = 0
+            rodata_section_offsets = []
             for index in rodata_section_indices:
                 # copy slices of rodata from ASM object into each .rodata section
                 data_len = len(compiled_elf.sections[index].data)
@@ -345,6 +345,7 @@ def process_c_file(
                     offset : offset + data_len
                 ]
                 offset += data_len
+                rodata_section_offsets.append(offset)
 
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
@@ -388,26 +389,20 @@ def process_c_file(
         if local_syms_inserted > 0:
             # update relocations
             for relocation_record in compiled_elf.get_relocations():
-                if relocation_record.sh_info in rodata_section_indices:
+                if relocation_record.sh_info == rodata_section_indices[0]:
                     if len(rodata_section_indices) == 1:
-                        # no fixup is required when only 1 .rodata section
+                        # nothing to do when only a single .rodata section
                         continue
 
                     # otherwise we need to split the rodata relocations across each .rodata section
-                    buckets = list(
-                        itertools.accumulate(
-                            len(compiled_elf.sections[i].data)
-                            for i in rodata_section_indices
-                        )
-                    )
                     new_relocations: List[List[Relocation]] = [
                         [] for _ in rodata_section_indices
                     ]
                     for relocation in relocation_record.relocations:
-                        for i in range(len(buckets)):
-                            if relocation.r_offset < buckets[i]:
+                        for i in range(len(rodata_section_offsets)):
+                            if relocation.r_offset < rodata_section_offsets[i]:
                                 if i > 0:
-                                    relocation.r_offset -= buckets[i - 1]
+                                    relocation.r_offset -= rodata_section_offsets[i - 1]
                                 new_relocations[i].append(relocation)
                                 break
 
@@ -417,7 +412,7 @@ def process_c_file(
                             new_rodata_reloc = relocation_record
                         else:
                             # take a copy of the original
-                            new_rodata_reloc = copy.deepcopy(relocation_record)
+                            new_rodata_reloc = copy.copy(relocation_record)
 
                         new_rodata_reloc.relocations = relocations
                         new_rodata_reloc.sh_info = rodata_section_indices[i]
