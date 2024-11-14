@@ -29,7 +29,7 @@ def assemble_file(
         cmd = [
             as_path,
             "-EL",
-            "-march=gs464",
+            "-march=allegrex",
             "-mabi=32",
             "-Iinclude",
             "-o",
