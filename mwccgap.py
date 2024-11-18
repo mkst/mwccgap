@@ -13,6 +13,8 @@ def main():
     parser.add_argument("o_file", type=str)
     parser.add_argument("--mwcc-path", type=str, default="mwccpsp.exe")
     parser.add_argument("--as-path", type=str, default="mipsel-linux-gnu-as")
+    parser.add_argument("--as-march", type=str, default="allegrex")
+    parser.add_argument("--as-mabi", type=str, default="32")
     parser.add_argument("--use-wibo", action="store_true")
     parser.add_argument("--wibo-path", type=str, default="wibo")
     parser.add_argument("--asm-dir-prefix", type=str)
@@ -30,6 +32,8 @@ def main():
             c_flags,
             mwcc_path=args.mwcc_path,
             as_path=args.as_path,
+            as_march=args.as_march,
+            as_mabi=args.as_mabi,
             use_wibo=args.use_wibo,
             wibo_path=args.wibo_path,
             as_flags=as_flags,

@@ -20,6 +20,8 @@ FUNCTION_PREFIX = "mwccgap_"
 def assemble_file(
     asm_filepath: Path,
     as_path="mipsel-linux-gnu-as",
+    as_march="allegrex",
+    as_mabi="32",
     as_flags: Optional[List[str]] = None,
 ) -> bytes:
     if as_flags is None:
@@ -29,8 +31,8 @@ def assemble_file(
         cmd = [
             as_path,
             "-EL",
-            "-march=allegrex",
-            "-mabi=32",
+            f"-march={as_march}",
+            f"-mabi={as_mabi}",
             "-Iinclude",
             "-o",
             temp_file.name,
@@ -208,6 +210,8 @@ def process_c_file(
     mwcc_path="mwccpsp.exe",
     as_path="mipsel-linux-gnu-as",
     as_flags=None,
+    as_march="allegrex",
+    as_mabi="32",
     use_wibo=True,
     wibo_path="wibo",
     asm_dir_prefix=None,
@@ -295,7 +299,13 @@ def process_c_file(
     for asm_file in asm_files:
         function = asm_file.stem
 
-        asm_bytes = assemble_file(asm_file, as_path=as_path, as_flags=as_flags)
+        asm_bytes = assemble_file(
+            asm_file,
+            as_path=as_path,
+            as_flags=as_flags,
+            as_march=as_march,
+            as_mabi=as_mabi,
+        )
         assembled_elf = Elf(asm_bytes)
         asm_functions = assembled_elf.get_functions()
         assert len(asm_functions) == 1, "Only support 1 function per asm file"
