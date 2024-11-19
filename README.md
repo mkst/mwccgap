@@ -1,13 +1,14 @@
 # mwccgap AKA "MWCC Global Assembly Processor"
 
-This tool allows for individual functions within a C file to be replaced by assembly code, heavily inspired by [asm-processor](https://github.com/simonlindholm/asm-processor).
+`mwccgap` is a tool that enables individual functions within a C file to be replaced with assembly code, drawing heavy inspiration from [asm-processor](https://github.com/simonlindholm/asm-processor).
 
-The MWCC compiler *does* support including raw assembly within a C file, however all variables and functions must be defined, this makes the traditional [Ship of Theseus](https://en.wikipedia.org/wiki/Ship_of_Theseus) approach to matching decomp rather slow and painful.
+While the MWCC compiler does support embedding raw assembly within a C file, it requires that all variables and functions be fully defined. This limitation makes the traditional [Ship of Theseus](https://en.wikipedia.org/wiki/Ship_of_Theseus) approach to matching decompiled code slow and cumbersome.
 
-Where `asm-processor` uses an `GLOBAL_ASM` pragma, `mwccgap` uses `INCLUDE_ASM` macro as the first project to use `mwccgap` uses `gcc`. In future support might be added to suppport either approach.
+Unlike `asm-processor`, which uses a `GLOBAL_ASM` pragma, `mwccgap` adopts an `INCLUDE_ASM` macro to align with the needs of its first supported project, which uses GCC. Future updates may add support for both approaches.
 
-Functions that are `INCLUDE_ASM`'d within the C file are expanded to `nop`s of the appropriate size and the C file is compiled. These functions are then assembled separately, and the resulting object data is transplanted into the C object. Symbols and relocations are updated as necessary.
+When a function in a C file is marked defined using the `INCLUDE_ASM` macro, it is replaced with a series of `nop` instructions of the appropriate size during compilation. The C file is then compiled as usual. Separately, the assembly code for these functions is compiled, and the resulting object data is transplanted back into the C object. Symbols and relocations are updated as needed to ensure correctness.
 
+Any `.rodata` sections within the assembly code will also be transplanted into the C object.
 
 ## Usage
 
@@ -23,6 +24,12 @@ The path to the MWCC executable, defaults to `mwccpsp.exe`
 ### `--as-path` (path)
 The path to GNU as, defaults to `mipsel-linux-gnu-as`
 
+### `--as-march`
+The `-march=` value to pass to GNU as, defaults to `allegrex`
+
+### `--as-mabi`
+The `-mabi=` value to pass to GNU as, defaults to `32`
+
 ### `--use-wibo`
 Whether or not to prefix the call to the MWCC executable with [wibo](https://github.com/decompals/wibo), defaults to false.
 
@@ -34,6 +41,7 @@ Optional prefix for `INCLUDE_ASM` files.
 
 
 All additional arguments will be passed to the MWCC executable.
+
 
 ## Limitations
 
