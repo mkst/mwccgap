@@ -11,7 +11,14 @@ from mwccgap.mwccgap import process_c_file
 def main() -> None:
     parser = argparse.ArgumentParser()
 
-    if read_from_file := sys.stdin.isatty():
+    read_from_file = sys.stdin.isatty()
+
+    if not read_from_file:
+        in_lines = sys.stdin.readlines()
+        if len(in_lines) == 0:
+            read_from_file = True
+
+    if read_from_file:
         parser.add_argument("c_file", type=Path)
 
     parser.add_argument("o_file", type=Path)
@@ -33,7 +40,7 @@ def main() -> None:
             c_file = args.c_file if read_from_file else Path(temp_c_file.name)
 
             if not read_from_file:
-                temp_c_file.writelines([x.encode("utf") for x in sys.stdin.readlines()])
+                temp_c_file.writelines([x.encode("utf") for x in in_lines])
                 temp_c_file.flush()
 
             process_c_file(
