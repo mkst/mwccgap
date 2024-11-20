@@ -258,7 +258,7 @@ def compile_file(
         if len(obj_bytes) == 0:
             raise Exception(f"Error compiling {c_file}, object is empty")
 
-        return obj_bytes
+    return obj_bytes
 
 
 def process_c_file(
