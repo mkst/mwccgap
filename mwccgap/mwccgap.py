@@ -14,6 +14,9 @@ from .elf import Elf, TextSection, Relocation
 INCLUDE_ASM = "INCLUDE_ASM"
 INCLUDE_ASM_REGEX = r'INCLUDE_ASM\("(.*)", (.*)\)'
 
+INCLUDE_RODATA = "INCLUDE_RODATA"
+INCLUDE_RODATA_REGEX = r'INCLUDE_RODATA\("(.*)", (.*)\)'
+
 FUNCTION_PREFIX = "mwccgap_"
 
 
@@ -23,6 +26,7 @@ def assemble_file(
     as_march="allegrex",
     as_mabi="32",
     as_flags: Optional[List[str]] = None,
+    macro_inc_path: Optional[Path] = None,
 ) -> bytes:
     if as_flags is None:
         as_flags = []
@@ -41,7 +45,11 @@ def assemble_file(
         with subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE
         ) as process:
-            stdout, stderr = process.communicate(input=asm_filepath.read_bytes())
+            in_bytes = asm_filepath.read_bytes()
+            if macro_inc_path and macro_inc_path.is_file():
+                in_bytes = macro_inc_path.read_bytes() + in_bytes
+
+            stdout, stderr = process.communicate(input=in_bytes)
 
         if len(stdout) > 0:
             sys.stderr.write(stdout.decode("utf"))
@@ -55,26 +63,37 @@ def assemble_file(
     return obj_bytes
 
 
-def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path]]:
+def preprocess_c_file(
+    c_file, asm_dir_prefix=None
+) -> Tuple[List[str], List[Tuple[Path, int]]]:
     with open(c_file, "r") as f:
         lines = f.readlines()
 
     out_lines: List[str] = []
-    asm_files: List[Path] = []
+    asm_files: List[Tuple[Path, int]] = []
     for i, line in enumerate(lines):
         line = line.rstrip()
 
-        if line.startswith(INCLUDE_ASM):
-            if not (match := re.match(INCLUDE_ASM_REGEX, line)):
+        if line.startswith(INCLUDE_ASM) or line.startswith(INCLUDE_RODATA):
+
+            if line.startswith(INCLUDE_ASM):
+                macro = INCLUDE_ASM
+                regex = INCLUDE_ASM_REGEX
+            else:
+
+                macro = INCLUDE_RODATA
+                regex = INCLUDE_RODATA_REGEX
+
+            if not (match := re.match(regex, line)):
                 raise Exception(
-                    f"{c_file} contains invalid {INCLUDE_ASM} macro on line {i}: {line}"
+                    f"{c_file} contains invalid {macro} macro on line {i}: {line}"
                 )
             try:
                 asm_dir = Path(match.group(1))
                 asm_function = match.group(2)
             except Exception as e:
                 raise Exception(
-                    f"{c_file} contains invalid {INCLUDE_ASM} macro on line {i}: {line}"
+                    f"{c_file} contains invalid {macro} macro on line {i}: {line}"
                 ) from e
 
             asm_file = asm_dir / f"{asm_function}.s"
@@ -85,7 +104,6 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path
                 raise Exception(
                     f"{c_file} includes asm {asm_file} that does not exist on line {i}: {line}"
                 )
-            asm_files.append(asm_file)
 
             in_rodata = False
             rodata_entries = {}
@@ -101,7 +119,9 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path
                     if asm_line.endswith(".text"):
                         in_rodata = False
                         continue
-                    elif asm_line.endswith(".rodata"):
+                    elif asm_line.endswith(".rodata") or asm_line.endswith(
+                        ".late_rodata"
+                    ):
                         in_rodata = True
                         continue
 
@@ -112,9 +132,15 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path
                         continue
                     if asm_line.startswith(".size"):
                         continue
-                    if asm_line.startswith("glabel"):
+                    if asm_line.startswith("glabel") or asm_line.startswith("dlabel"):
                         _, rodata_symbol = asm_line.split(" ")
                         rodata_entries[rodata_symbol] = 0
+                        continue
+                    if asm_line.find(" .byte ") > -1:
+                        rodata_entries[rodata_symbol] += 1
+                        continue
+                    if asm_line.find(" .short ") > -1:
+                        rodata_entries[rodata_symbol] += 2
                         continue
                     if asm_line.find(" .word ") > -1:
                         rodata_entries[rodata_symbol] += 4
@@ -149,18 +175,20 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path
 
                 nops_needed += 1
 
-            nops = nops_needed * ["nop"]
-            out_lines.extend(
-                [f"asm void {FUNCTION_PREFIX}{asm_function}() {'{'}", *nops, "}"]
-            )
+            if nops_needed > 0:
+                nops = nops_needed * ["nop"]
+                out_lines.extend(
+                    [f"asm void {FUNCTION_PREFIX}{asm_function}() {'{'}", *nops, "}"]
+                )
 
             for symbol, size in rodata_entries.items():
-                words_needed = size // 4
                 out_lines.append(
-                    f"const long {symbol}[{words_needed}] = {'{'}"
-                    + words_needed * "0, "
+                    f"const unsigned char {symbol}[{size}] = {'{'}"
+                    + size * "0, "
                     + "};",
                 )
+
+            asm_files.append((asm_file, len(rodata_entries)))
 
         else:
             out_lines.append(line)
@@ -168,30 +196,27 @@ def preprocess_c_file(c_file, asm_dir_prefix=None) -> Tuple[List[str], List[Path
     return (out_lines, asm_files)
 
 
-def compile_file(
+def compile_file_helper(
     c_file: Path,
     o_file: Path,
-    c_flags=None,
-    mwcc_path="mwccpsp.exe",
-    use_wibo=True,
-    wibo_path="wibo",
+    c_flags: Optional[List[str]],
+    mwcc_path: Path,
+    use_wibo: bool,
+    wibo_path: Path,
 ):
-    if c_flags is None:
-        c_flags = []
-
     o_file.parent.mkdir(exist_ok=True, parents=True)
     o_file.unlink(missing_ok=True)
 
     cmd = [
-        mwcc_path,
+        str(mwcc_path),
         "-c",
-        *c_flags,
+        *(c_flags if c_flags else []),
         "-o",
         str(o_file),
         str(c_file),
     ]
     if use_wibo:
-        cmd.insert(0, wibo_path)
+        cmd.insert(0, str(wibo_path))
 
     with subprocess.Popen(
         cmd,
@@ -203,6 +228,39 @@ def compile_file(
         return proc.communicate()
 
 
+def compile_file(
+    c_file: Path,
+    c_flags: Optional[List[str]],
+    mwcc_path: Path,
+    use_wibo: bool,
+    wibo_path: Path,
+):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        o_file = Path(temp_dir) / "result.o"
+        stdout, stderr = compile_file_helper(
+            c_file,
+            o_file,
+            c_flags,
+            mwcc_path,
+            use_wibo,
+            wibo_path,
+        )
+
+        if len(stdout) > 0:
+            sys.stderr.write(stdout.decode("utf"))
+        if len(stderr) > 0:
+            sys.stderr.write(stderr.decode("utf"))
+
+        if not o_file.is_file():
+            raise Exception(f"Error compiling {c_file}")
+
+        obj_bytes = o_file.read_bytes()
+        if len(obj_bytes) == 0:
+            raise Exception(f"Error compiling {c_file}, object is empty")
+
+        return obj_bytes
+
+
 def process_c_file(
     c_file: Path,
     o_file: Path,
@@ -212,34 +270,13 @@ def process_c_file(
     as_flags=None,
     as_march="allegrex",
     as_mabi="32",
-    use_wibo=True,
+    use_wibo=False,
     wibo_path="wibo",
     asm_dir_prefix=None,
+    macro_inc_path: Optional[Path] = None,
 ):
-    # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_o_file = Path(temp_dir) / "precompile.o"
-        stdout, stderr = compile_file(
-            c_file,
-            temp_o_file,
-            c_flags=c_flags,
-            mwcc_path=mwcc_path,
-            use_wibo=use_wibo,
-            wibo_path=wibo_path,
-        )
-
-        if len(stdout) > 0:
-            sys.stderr.write(stdout.decode("utf"))
-        if len(stderr) > 0:
-            sys.stderr.write(stderr.decode("utf"))
-
-        if not temp_o_file.is_file():
-            raise Exception(f"Error precompiling {c_file}")
-
-        obj_bytes = temp_o_file.read_bytes()
-        if len(obj_bytes) == 0:
-            raise Exception(f"Error precompiling {c_file}, object is empty")
-
+    # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing from the object
+    obj_bytes = compile_file(c_file, c_flags, mwcc_path, use_wibo, wibo_path)
     precompiled_elf = Elf(obj_bytes)
 
     # 2. identify all INCLUDE_ASM statements and replace with asm statements full of nops
@@ -249,7 +286,7 @@ def process_c_file(
     c_functions = [f.function_name for f in precompiled_elf.get_functions()]
 
     # filter out functions that can be found in the compiled c object
-    asm_files = [x for x in asm_files if x.stem not in c_functions]
+    asm_files = [(x, y) for (x, y) in asm_files if x.stem not in c_functions]
 
     # if there's nothing to do, write out the bytes from the precompiled object
     if len(asm_files) == 0:
@@ -263,29 +300,9 @@ def process_c_file(
         temp_c_file.write("\n".join(out_lines).encode("utf"))
         temp_c_file.flush()
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_o_file = Path(temp_dir) / "result.o"
-
-            stdout, stderr = compile_file(
-                Path(temp_c_file.name),
-                temp_o_file,
-                c_flags,
-                mwcc_path=mwcc_path,
-                use_wibo=use_wibo,
-                wibo_path=wibo_path,
-            )
-
-            if len(stdout) > 0:
-                sys.stderr.write(stdout.decode("utf"))
-            if len(stderr) > 0:
-                sys.stderr.write(stderr.decode("utf"))
-
-            if not temp_o_file.is_file():
-                raise Exception(f"Error compiling {c_file}")
-
-            obj_bytes = temp_o_file.read_bytes()
-            if len(obj_bytes) == 0:
-                raise Exception(f"Error compiling {c_file}, object is empty")
+        obj_bytes = compile_file(
+            Path(temp_c_file.name), c_flags, mwcc_path, use_wibo, wibo_path
+        )
 
     compiled_elf = Elf(obj_bytes)
 
@@ -296,7 +313,9 @@ def process_c_file(
             symbol.name = symbol.name[len(FUNCTION_PREFIX) :]
             symbol.st_name += len(FUNCTION_PREFIX)
 
-    for asm_file in asm_files:
+    rodata_sections_encountered = 0
+
+    for asm_file, num_rodata_symbols in asm_files:
         function = asm_file.stem
 
         asm_bytes = assemble_file(
@@ -305,57 +324,91 @@ def process_c_file(
             as_flags=as_flags,
             as_march=as_march,
             as_mabi=as_mabi,
+            macro_inc_path=macro_inc_path,
         )
         assembled_elf = Elf(asm_bytes)
+
         asm_functions = assembled_elf.get_functions()
-        assert len(asm_functions) == 1, "Only support 1 function per asm file"
-
-        # identify the .text section for this function
-        for text_section_index, text_section in enumerate(compiled_elf.sections):
-            if (
-                isinstance(text_section, TextSection)
-                and text_section.function_name == f"{FUNCTION_PREFIX}{function}"
-            ):
-                break
-        else:
-            raise Exception(f"{function} not found in {c_file}")
-
-        rodata_section_indices = []
-        for i, rodata_section in enumerate(
-            compiled_elf.sections[text_section_index + 1 :]
-        ):
-            if rodata_section.name == "":
-                # found another .text section before .rodata
-                break
-            if rodata_section.name == ".rodata":
-                # found some .rodata before another .text section
-                rodata_section_indices.append(text_section_index + 1 + i)
+        assert (
+            len(asm_functions) == 1
+        ), f"Maximum of 1 function per asm file (found {len(asm_functions)})"
 
         asm_text = asm_functions[0].data
-        compiled_function_length = len(text_section.data)
+        has_text = len(asm_text) > 0
 
-        assert (
-            len(asm_text) >= compiled_function_length
-        ), f"Not enough assembly to fill {function} in {c_file}"
+        if has_text:
+            # identify the .text section for this function
+            for text_section_index, text_section in enumerate(compiled_elf.sections):
+                if (
+                    isinstance(text_section, TextSection)
+                    and text_section.function_name == f"{FUNCTION_PREFIX}{function}"
+                ):
+                    break
+            else:
+                raise Exception(f"{function} not found in {c_file}")
 
-        text_section.data = asm_text[:compiled_function_length]
+            # assumption is that .rodata will immediately follow the .text section
+            rodata_section_indices = []
+            if num_rodata_symbols > 0:
+                for i, section in enumerate(
+                    compiled_elf.sections[text_section_index + 1 :]
+                ):
+                    if section.name == ".rodata":
+                        # found some .rodata before another .text section
+                        rodata_section_indices.append(text_section_index + 1 + i)
+                        if len(rodata_section_indices) == num_rodata_symbols:
+                            # reached end of rodata sections for this text section
+                            break
 
-        if len(rodata_section_indices) > 0:
+            assert num_rodata_symbols == len(
+                rodata_section_indices
+            ), ".rodata section count mismatch"
+        else:
+            rodata_section_indices = []
+            for i, section in enumerate(compiled_elf.sections):
+                if section.name == ".rodata":
+                    rodata_section_indices.append(i)
+
+            rodata_section_indices = [
+                idx
+                for (i, idx) in enumerate(rodata_section_indices)
+                if (
+                    i >= rodata_sections_encountered
+                    and i < rodata_sections_encountered + num_rodata_symbols
+                )
+            ]
+
+        rodata_sections_encountered += num_rodata_symbols
+
+        if has_text:
+            # transplant .text section data from assembled object
+            compiled_function_length = len(text_section.data)
+
+            assert (
+                len(asm_text) >= compiled_function_length
+            ), f"Not enough assembly to fill {function} in {c_file}"
+
+            text_section.data = asm_text[:compiled_function_length]
+
+        if num_rodata_symbols > 0:
             assert (
                 len(assembled_elf.rodata_sections) == 1
-            ), "Expected ASM to contain 1 .rodata section"
+            ), f"Expected ASM to contain 1 .rodata section, found {len(assembled_elf.rodata_sections)}"
             asm_rodata = assembled_elf.rodata_sections[0]
 
             offset = 0
             rodata_section_offsets = []
-            for index in rodata_section_indices:
+            for idx in rodata_section_indices:
                 # copy slices of rodata from ASM object into each .rodata section
-                data_len = len(compiled_elf.sections[index].data)
-                compiled_elf.sections[index].data = asm_rodata.data[
+                data_len = len(compiled_elf.sections[idx].data)
+                compiled_elf.sections[idx].data = asm_rodata.data[
                     offset : offset + data_len
                 ]
                 offset += data_len
                 rodata_section_offsets.append(offset)
+
+                # force 4-byte alignment for .rodata sections (defaults to 16-byte)
+                compiled_elf.sections[idx].sh_addralign = 4
 
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
@@ -372,10 +425,10 @@ def process_c_file(
         # assumes .text relocations precede .rodata relocations
         for i, relocation_record in enumerate(relocation_records):
             relocation_record.sh_link = compiled_elf.symtab_index
-            if i == 0:
+            if has_text and i == 0:
                 relocation_record.sh_name = rel_text_sh_name
                 relocation_record.sh_info = text_section_index
-            if i == 1:
+            else:
                 relocation_record.sh_name = rel_rodata_sh_name
                 relocation_record.sh_info = rodata_section_indices[0]
 
@@ -385,11 +438,15 @@ def process_c_file(
                 if symbol.bind == 0:
                     local_syms_inserted += 1
 
-                idx = compiled_elf.add_symbol(symbol, force=i == 1)
-                relocation.symbol_index = idx
+                if has_text and i == 0:
+                    force = False
+                else:
+                    force = True
+
+                relocation.symbol_index = compiled_elf.add_symbol(symbol, force=force)
                 reloc_symbols.add(symbol.name)
 
-                if i == 1:
+                if has_text and i == 1:
                     # repoint .rodata reloc to .text section
                     symbol.st_shndx = text_section_index
 
@@ -400,7 +457,7 @@ def process_c_file(
             # update relocations
             for relocation_record in compiled_elf.get_relocations():
                 if relocation_record.sh_info == rodata_section_indices[0]:
-                    if len(rodata_section_indices) == 1:
+                    if num_rodata_symbols == 1:
                         # nothing to do when only a single .rodata section
                         continue
 
@@ -445,7 +502,7 @@ def process_c_file(
                 # ignore local symbols
                 continue
 
-            if symbol.name not in reloc_symbols:
+            if has_text and symbol.name not in reloc_symbols:
                 symbol.st_shndx = text_section_index
                 compiled_elf.add_symbol(symbol)
 
