@@ -196,7 +196,7 @@ class Elf:
                         function_name = function_names[len(self.functions)]
                         text_section.function_name = function_name
                     self.functions.append(text_section)
-                elif section.name == ".rodata":
+                elif section.name in (".rodata", ".late_rodata"):
                     self.rodata_sections.append(section)
 
         # for i, symbol in enumerate(self.symtab.symbols):
