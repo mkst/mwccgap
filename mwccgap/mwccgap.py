@@ -313,7 +313,12 @@ def process_c_file(
             symbol.name = symbol.name[len(FUNCTION_PREFIX) :]
             symbol.st_name += len(FUNCTION_PREFIX)
 
-    rodata_sections_encountered = 0
+    symbol_to_rodata_idx = {}
+    for i, section in enumerate(compiled_elf.sections):
+        if section.name == ".rodata":
+            for symbol in compiled_elf.symtab.symbols:
+                if symbol.st_shndx == i:
+                    symbol_to_rodata_idx[symbol.name] = i
 
     for asm_file, num_rodata_symbols in asm_files:
         function = asm_file.stem
@@ -364,21 +369,14 @@ def process_c_file(
                 rodata_section_indices
             ), ".rodata section count mismatch"
         else:
-            rodata_section_indices = []
-            for i, section in enumerate(compiled_elf.sections):
-                if section.name == ".rodata":
-                    rodata_section_indices.append(i)
-
-            rodata_section_indices = [
-                idx
-                for (i, idx) in enumerate(rodata_section_indices)
-                if (
-                    i >= rodata_sections_encountered
-                    and i < rodata_sections_encountered + num_rodata_symbols
-                )
-            ]
-
-        rodata_sections_encountered += num_rodata_symbols
+            assert (
+                num_rodata_symbols == 1
+            ), f"Maximum of 1 symbol per rodata asm file (found {num_rodata_symbols})"
+            idx = symbol_to_rodata_idx.get(function)
+            assert (
+                idx is not None
+            ), f"Could not find .rodata section for symbol '{function}'"
+            rodata_section_indices = [idx]
 
         if has_text:
             # transplant .text section data from assembled object
