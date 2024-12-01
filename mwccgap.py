@@ -28,7 +28,7 @@ def main() -> None:
     parser.add_argument("--as-mabi", type=str, default="32")
     parser.add_argument("--use-wibo", action="store_true")
     parser.add_argument("--wibo-path", type=Path, default=Path("wibo"))
-    parser.add_argument("--asm-dir-prefix", type=str)
+    parser.add_argument("--asm-dir-prefix", type=Path)
     parser.add_argument("--macro-inc-path", type=Path)
 
     args, c_flags = parser.parse_known_args()
