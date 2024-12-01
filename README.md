@@ -39,18 +39,22 @@ Path to `wibo` (i.e. if `wibo` is not on your path, or you wish to use `wine` in
 ### `--asm-dir-prefix`
 Optional prefix for `INCLUDE_ASM` files.
 
+### `--macro-inc-path`
+Optional path to your `macro.inc` file.
 
 All additional arguments will be passed to the MWCC executable.
 
 
 ## Limitations
 
-The limitations currently outnumber the features, PRs are very welcome to improve the tool.
+Known limitations:
+
+- `.rodata` alignment set to `0x8` for all `INCLUDE_RODATA` sections.
 
 
 ## Bugs
 
-This project is in it's infancy and is full of assumptions, and therefore likely riddled with bugs; again PRs are welcome!
+This project is in its infancy and is full of assumptions, and therefore likely riddled with bugs; PRs are welcomed!
 
 
 ## Examples
@@ -58,3 +62,4 @@ This project is in it's infancy and is full of assumptions, and therefore likely
 Projects that use `mwccgap` include:
 
 - [Castlevania: Symphony of the Night Decompilation](https://github.com/Xeeynamo/sotn-decomp)
+- [Street Fighter III: 3rd Strike](https://github.com/apstygo/sfiii-decomp)
