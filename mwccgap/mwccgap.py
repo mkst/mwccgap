@@ -156,13 +156,26 @@ def preprocess_s_file(
     return (c_lines, rodata_entries)
 
 
+def read_c_file_lines(
+    c_file,
+    expected_encodings: List[str]
+) -> Tuple[List[str], str]:
+    for encoding in expected_encodings:
+        try:
+            with open(c_file, "r", encoding=encoding) as f:
+                return (f.readlines(), encoding)
+        except:
+            pass
+
+    raise RuntimeError(f"Failed to open {c_file} with any of the expected encodings ({expected_encodings})")
+
+
 def preprocess_c_file(
     c_file,
     asm_dir_prefix: Optional[Path] = None,
-) -> Tuple[List[str], List[Tuple[Path, int]]]:
-    with open(c_file, "r") as f:
-        lines = f.readlines()
-
+    expected_encodings: List[str] = ["utf", "shift_jis"],
+) -> Tuple[List[str], List[Tuple[Path, int]], str]:
+    lines, encoding = read_c_file_lines(c_file, expected_encodings)
     out_lines: List[str] = []
     asm_files: List[Tuple[Path, int]] = []
     for i, line in enumerate(lines):
@@ -204,7 +217,7 @@ def preprocess_c_file(
         else:
             out_lines.append(line)
 
-    return (out_lines, asm_files)
+    return (out_lines, asm_files, encoding)
 
 
 def compile_file_helper(
@@ -291,7 +304,7 @@ def process_c_file(
     precompiled_elf = Elf(obj_bytes)
 
     # 2. identify all INCLUDE_ASM statements and replace with asm statements full of nops
-    out_lines, asm_files = preprocess_c_file(c_file, asm_dir_prefix=asm_dir_prefix)
+    out_lines, asm_files, encoding = preprocess_c_file(c_file, asm_dir_prefix=asm_dir_prefix)
 
     # for now we only care about the names of the functions that exist
     c_functions = [f.function_name for f in precompiled_elf.get_functions()]
@@ -308,7 +321,7 @@ def process_c_file(
 
     # 3. compile the modified .c file for real
     with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
-        temp_c_file.write("\n".join(out_lines).encode("utf"))
+        temp_c_file.write("\n".join(out_lines).encode(encoding))
         temp_c_file.flush()
 
         obj_bytes = compile_file(
