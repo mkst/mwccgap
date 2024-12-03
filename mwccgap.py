@@ -31,6 +31,12 @@ def main() -> None:
     parser.add_argument("--asm-dir-prefix", type=Path)
     parser.add_argument("--macro-inc-path", type=Path)
 
+    parser.add_argument(
+        "--source-encoding",
+        type=str,
+        help="The encoding to re-encode C sources with before compilation."
+    )
+
     args, c_flags = parser.parse_known_args()
 
     as_flags = ["-G0"]  # TODO: base this on -sdatathreshold value from c_flags
@@ -56,6 +62,7 @@ def main() -> None:
                 as_flags=as_flags,
                 asm_dir_prefix=args.asm_dir_prefix,
                 macro_inc_path=args.macro_inc_path,
+                source_encoding=args.source_encoding,
             )
 
     except Exception as e:

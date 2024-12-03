@@ -245,9 +245,18 @@ def compile_file(
     mwcc_path: Path,
     use_wibo: bool,
     wibo_path: Path,
+    source_encoding: Optional[str],
 ):
     with tempfile.TemporaryDirectory() as temp_dir:
         o_file = Path(temp_dir) / "result.o"
+
+        if source_encoding != None:
+            encoded_c_file = Path(temp_dir) / "encoded_source.c"
+            source_text = c_file.read_text()
+            encoded_source_text = source_text.encode(source_encoding)
+            encoded_c_file.write_bytes(encoded_source_text)
+            c_file = encoded_c_file
+
         stdout, stderr = compile_file_helper(
             c_file,
             o_file,
@@ -285,9 +294,10 @@ def process_c_file(
     wibo_path="wibo",
     asm_dir_prefix: Optional[Path] = None,
     macro_inc_path: Optional[Path] = None,
+    source_encoding: Optional[str] = None,
 ):
     # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing from the object
-    obj_bytes = compile_file(c_file, c_flags, mwcc_path, use_wibo, wibo_path)
+    obj_bytes = compile_file(c_file, c_flags, mwcc_path, use_wibo, wibo_path, source_encoding)
     precompiled_elf = Elf(obj_bytes)
 
     # 2. identify all INCLUDE_ASM statements and replace with asm statements full of nops
@@ -312,7 +322,7 @@ def process_c_file(
         temp_c_file.flush()
 
         obj_bytes = compile_file(
-            Path(temp_c_file.name), c_flags, mwcc_path, use_wibo, wibo_path
+            Path(temp_c_file.name), c_flags, mwcc_path, use_wibo, wibo_path, source_encoding
         )
 
     compiled_elf = Elf(obj_bytes)
