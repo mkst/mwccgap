@@ -250,7 +250,7 @@ def compile_file(
     with tempfile.TemporaryDirectory() as temp_dir:
         o_file = Path(temp_dir) / "result.o"
 
-        if source_encoding != None:
+        if source_encoding is not None:
             encoded_c_file = Path(temp_dir) / "encoded_source.c"
             source_text = c_file.read_text()
             encoded_source_text = source_text.encode(source_encoding)
