@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--wibo-path", type=Path, default=Path("wibo"))
     parser.add_argument("--asm-dir-prefix", type=Path)
     parser.add_argument("--macro-inc-path", type=Path)
+    parser.add_argument("--target-encoding", type=str)
 
     args, c_flags = parser.parse_known_args()
 
@@ -56,6 +57,7 @@ def main() -> None:
                 as_flags=as_flags,
                 asm_dir_prefix=args.asm_dir_prefix,
                 macro_inc_path=args.macro_inc_path,
+                c_file_encoding=args.target_encoding,
             )
 
     except Exception as e:

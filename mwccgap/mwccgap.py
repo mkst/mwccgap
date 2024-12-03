@@ -156,26 +156,13 @@ def preprocess_s_file(
     return (c_lines, rodata_entries)
 
 
-def read_c_file_lines(
-    c_file,
-    expected_encodings: List[str]
-) -> Tuple[List[str], str]:
-    for encoding in expected_encodings:
-        try:
-            with open(c_file, "r", encoding=encoding) as f:
-                return (f.readlines(), encoding)
-        except:
-            pass
-
-    raise RuntimeError(f"Failed to open {c_file} with any of the expected encodings ({expected_encodings})")
-
-
 def preprocess_c_file(
-    c_file,
+    c_file: Path,
     asm_dir_prefix: Optional[Path] = None,
-    expected_encodings: List[str] = ["utf", "shift_jis"],
-) -> Tuple[List[str], List[Tuple[Path, int]], str]:
-    lines, encoding = read_c_file_lines(c_file, expected_encodings)
+) -> Tuple[List[str], List[Tuple[Path, int]]]:
+    with c_file.open("r", encoding="utf") as f:
+        lines = f.readlines()
+
     out_lines: List[str] = []
     asm_files: List[Tuple[Path, int]] = []
     for i, line in enumerate(lines):
@@ -217,7 +204,7 @@ def preprocess_c_file(
         else:
             out_lines.append(line)
 
-    return (out_lines, asm_files, encoding)
+    return (out_lines, asm_files)
 
 
 def compile_file_helper(
@@ -227,7 +214,7 @@ def compile_file_helper(
     mwcc_path: Path,
     use_wibo: bool,
     wibo_path: Path,
-):
+) -> tuple[bytes, bytes]:
     o_file.parent.mkdir(exist_ok=True, parents=True)
     o_file.unlink(missing_ok=True)
 
@@ -258,7 +245,7 @@ def compile_file(
     mwcc_path: Path,
     use_wibo: bool,
     wibo_path: Path,
-):
+) -> bytes:
     with tempfile.TemporaryDirectory() as temp_dir:
         o_file = Path(temp_dir) / "result.o"
         stdout, stderr = compile_file_helper(
@@ -298,13 +285,25 @@ def process_c_file(
     wibo_path="wibo",
     asm_dir_prefix: Optional[Path] = None,
     macro_inc_path: Optional[Path] = None,
+    c_file_encoding: Optional[str] = None,
 ):
     # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing from the object
-    obj_bytes = compile_file(c_file, c_flags, mwcc_path, use_wibo, wibo_path)
+    if c_file_encoding:
+        with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
+            with c_file.open("r", encoding="utf") as f:
+                in_lines = f.readlines()
+            temp_c_file.write("\n".join(in_lines).encode(c_file_encoding))
+            temp_c_file.flush()
+            obj_bytes = compile_file(
+                Path(temp_c_file.name), c_flags, mwcc_path, use_wibo, wibo_path
+            )
+    else:
+        obj_bytes = compile_file(c_file, c_flags, mwcc_path, use_wibo, wibo_path)
+
     precompiled_elf = Elf(obj_bytes)
 
     # 2. identify all INCLUDE_ASM statements and replace with asm statements full of nops
-    out_lines, asm_files, encoding = preprocess_c_file(c_file, asm_dir_prefix=asm_dir_prefix)
+    out_lines, asm_files = preprocess_c_file(c_file, asm_dir_prefix=asm_dir_prefix)
 
     # for now we only care about the names of the functions that exist
     c_functions = [f.function_name for f in precompiled_elf.get_functions()]
@@ -315,13 +314,12 @@ def process_c_file(
     # if there's nothing to do, write out the bytes from the precompiled object
     if len(asm_files) == 0:
         o_file.parent.mkdir(exist_ok=True, parents=True)
-        with o_file.open("wb") as f:
-            f.write(obj_bytes)
+        o_file.write_bytes(obj_bytes)
         return
 
     # 3. compile the modified .c file for real
     with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
-        temp_c_file.write("\n".join(out_lines).encode(encoding))
+        temp_c_file.write("\n".join(out_lines).encode(c_file_encoding or "utf"))
         temp_c_file.flush()
 
         obj_bytes = compile_file(
@@ -525,5 +523,4 @@ def process_c_file(
                 compiled_elf.add_symbol(symbol)
 
     o_file.parent.mkdir(exist_ok=True, parents=True)
-    with o_file.open("wb") as f:
-        f.write(compiled_elf.pack())
+    o_file.write_bytes(compiled_elf.pack())
