@@ -290,9 +290,8 @@ def process_c_file(
     # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing from the object
     if c_file_encoding:
         with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
-            with c_file.open("r", encoding="utf") as f:
-                in_lines = f.readlines()
-            temp_c_file.write("\n".join(in_lines).encode(c_file_encoding))
+            data = c_file.read_bytes(encoding="utf")
+            temp_c_file.write(data.encode(c_file_encoding))
             temp_c_file.flush()
             obj_bytes = compile_file(
                 Path(temp_c_file.name), c_flags, mwcc_path, use_wibo, wibo_path
