@@ -42,6 +42,9 @@ Optional prefix for `INCLUDE_ASM` files.
 ### `--macro-inc-path`
 Optional path to your `macro.inc` file.
 
+### `--source-encoding`
+Optional encoding to re-encode C sources with before compilation.
+
 All additional arguments will be passed to the MWCC executable.
 
 

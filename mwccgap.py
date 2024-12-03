@@ -34,7 +34,7 @@ def main() -> None:
     parser.add_argument(
         "--source-encoding",
         type=str,
-        help="The encoding to re-encode C sources with before compilation."
+        help="Optional encoding to re-encode C sources with before compilation."
     )
 
     args, c_flags = parser.parse_known_args()
