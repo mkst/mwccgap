@@ -42,6 +42,9 @@ Optional prefix for `INCLUDE_ASM` files.
 ### `--macro-inc-path`
 Optional path to your `macro.inc` file.
 
+### `--target-encoding [sjis, ujis, etc]`
+Optional encoding that the input c file should be converted to, before being passed to the compiler.
+
 All additional arguments will be passed to the MWCC executable.
 
 
