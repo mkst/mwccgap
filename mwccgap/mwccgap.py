@@ -290,7 +290,7 @@ def process_c_file(
     # 1. compile file as-is, any INCLUDE_ASM'd functions will be missing from the object
     if c_file_encoding:
         with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
-            data = c_file.read_bytes(encoding="utf")
+            data = c_file.read_text(encoding="utf")
             temp_c_file.write(data.encode(c_file_encoding))
             temp_c_file.flush()
             obj_bytes = compile_file(
