@@ -31,13 +31,14 @@ def main() -> None:
     parser.add_argument("--asm-dir-prefix", type=Path)
     parser.add_argument("--macro-inc-path", type=Path)
     parser.add_argument("--target-encoding", type=str)
+    parser.add_argument("--path-context", type=Path)
 
     args, c_flags = parser.parse_known_args()
 
     as_flags = ["-G0"]  # TODO: base this on -sdatathreshold value from c_flags
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".c") as temp_c_file:
+        with tempfile.NamedTemporaryFile(suffix=".c", dir=args.path_context) as temp_c_file:
             c_file = args.c_file if read_from_file else Path(temp_c_file.name)
 
             if not read_from_file:
