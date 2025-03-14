@@ -45,6 +45,9 @@ Optional path to your `macro.inc` file.
 ### `--target-encoding [sjis, ujis, etc]`
 Optional encoding that the input c file should be converted to, before being passed to the compiler.
 
+### `--src-dir`
+Optional path to use when passing data over stdin to interpret relative path includes
+
 All additional arguments will be passed to the MWCC executable.
 
 
