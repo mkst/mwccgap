@@ -141,6 +141,22 @@ class Elf:
             elif sh_type == 4:
                 raise Exception("FIXME: No support for RELA sections")
 
+            elif sh_type == 8:
+                bss_section = BssSection(
+                    sh_name,
+                    sh_type,
+                    sh_flags,
+                    sh_addr,
+                    sh_offset,
+                    sh_size,
+                    sh_link,
+                    sh_info,
+                    sh_addralign,
+                    sh_entsize,
+                    section_data,
+                )
+                self.sections.append(bss_section)
+
             else:
                 section = Section(
                     sh_name,
@@ -268,7 +284,7 @@ class Elf:
 
             sh_offset += len(data)
 
-            alignment = section.sh_addralign
+            alignment = 1 << section.sh_addralign
             if alignment:
                 if sh_offset % alignment:
                     bytes_needed = alignment - (sh_offset % alignment)
@@ -467,6 +483,28 @@ class TextSection(Section):
             section.sh_entsize,
             section.data,
         )
+
+
+class BssSection(Section):
+    def pack_header(self) -> bytes:
+        return struct.pack(
+            Section.fmt,
+            *[
+                self.sh_name,
+                self.sh_type,
+                self.sh_flags,
+                self.sh_addr,
+                self.sh_offset,
+                self.sh_size,
+                self.sh_link,
+                self.sh_info,
+                self.sh_addralign,
+                self.sh_entsize,
+            ],
+        )
+
+    def pack_data(self) -> bytes:
+        return b""
 
 
 class Symtab(Section):
