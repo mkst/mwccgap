@@ -18,6 +18,7 @@ INCLUDE_RODATA = "INCLUDE_RODATA"
 INCLUDE_RODATA_REGEX = r'INCLUDE_RODATA\("(.*)", (.*)\)'
 
 FUNCTION_PREFIX = "mwccgap_"
+SYMBOL_AT = "__at__"
 
 
 def assemble_file(
@@ -110,6 +111,11 @@ def preprocess_s_file(
             if line.find(" .word ") > -1:
                 rodata_entries[rodata_symbol] += 4
                 continue
+            if line.find(" .asciz ") > -1:
+                *_, text = line.split(" .asciz ")
+                text = text.strip()
+                rodata_entries[rodata_symbol] += len(text) - 2
+                continue
 
             raise Exception(
                 f"Unexpected entry in .rodata section of {asm_file}: {line}"
@@ -149,6 +155,8 @@ def preprocess_s_file(
         )
 
     for symbol, size in rodata_entries.items():
+        if symbol.startswith('"@') and symbol.endswith('"'):
+            symbol = SYMBOL_AT + symbol.removeprefix('"@').removesuffix('"')
         c_lines.append(
             f"const unsigned char {symbol}[{size}] = {'{'}" + size * "0, " + "};",
         )
@@ -334,6 +342,11 @@ def process_c_file(
         if symbol.name.startswith(FUNCTION_PREFIX):
             symbol.name = symbol.name[len(FUNCTION_PREFIX) :]
             symbol.st_name += len(FUNCTION_PREFIX)
+
+        elif symbol.name.startswith(SYMBOL_AT):
+            symbol.name = "@" + symbol.name.removeprefix(SYMBOL_AT)
+            symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
+
         symbol_to_section_idx[symbol.name] = symbol.st_shndx
 
     for asm_file, num_rodata_symbols in asm_files:
