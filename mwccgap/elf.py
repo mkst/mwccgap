@@ -1,5 +1,13 @@
 import struct
-from typing import List, Optional, Tuple
+from typing import Optional
+
+SECTION_HEADER_SIZE = 0x28
+
+SHT_SYMTAB = 2
+SHT_STRTAB = 3
+SHT_RELA = 4
+SHT_NOBITS = 8
+SHT_REL = 9
 
 
 class Elf:
@@ -18,7 +26,7 @@ class Elf:
     e_shnum: int
     e_shstrndx: int
 
-    sections: List["Section"]
+    sections: list["Section"]
 
     symtab: "Symtab"
     shstrtab: "Strtab"
@@ -47,13 +55,11 @@ class Elf:
             self.e_shstrndx,
         ) = Elf.unpack(data)
 
-        self.sections: List[Section] = []
-        self.relocations: List[RelocationRecord] = []
-        self.functions: List[TextSection] = []
+        self.sections: list[Section] = []
+        self.relocations: list[RelocationRecord] = []
+        self.functions: list[TextSection] = []
 
-        self.rodata_sections: List[Section] = []
-
-        # self.rodata_refs: dict[Symbol, set] = {}
+        self.rodata_sections: list[Section] = []
 
         self.symtab = None  # type: ignore
         self.shstrtab = None  # type: ignore
@@ -63,8 +69,7 @@ class Elf:
         e_shnum = self.e_shnum
 
         ptr = e_shoff
-        i = 0
-        while ptr < e_shoff + e_shnum * 0x28:
+        while ptr < e_shoff + e_shnum * SECTION_HEADER_SIZE:
             (
                 sh_name,
                 sh_type,
@@ -76,12 +81,12 @@ class Elf:
                 sh_info,
                 sh_addralign,
                 sh_entsize,
-            ) = Section.unpack_header(data[ptr : ptr + 0x28])
+            ) = Section.unpack_header(data[ptr : ptr + SECTION_HEADER_SIZE])
 
             section_data = data[sh_offset : sh_offset + sh_size]
 
-            if sh_type == 2:
-                self.symtab_index = (ptr - e_shoff) // 0x28
+            if sh_type == SHT_SYMTAB:
+                self.symtab_index = (ptr - e_shoff) // SECTION_HEADER_SIZE
 
                 symtab = Symtab(
                     sh_name,
@@ -100,7 +105,7 @@ class Elf:
                 self.symtab = symtab
                 self.sections.append(symtab)
 
-            elif sh_type == 3:
+            elif sh_type == SHT_STRTAB:
                 strtab = Strtab(
                     sh_name,
                     sh_type,
@@ -122,7 +127,7 @@ class Elf:
                     self.strtab = strtab
                 self.sections.append(strtab)
 
-            elif sh_type == 9:
+            elif sh_type == SHT_REL:
                 relocation_record = RelocationRecord(
                     sh_name,
                     sh_type,
@@ -138,10 +143,10 @@ class Elf:
                 )
                 self.sections.append(relocation_record)
 
-            elif sh_type == 4:
+            elif sh_type == SHT_RELA:
                 raise Exception("FIXME: No support for RELA sections")
 
-            elif sh_type == 8:
+            elif sh_type == SHT_NOBITS:
                 bss_section = BssSection(
                     sh_name,
                     sh_type,
@@ -173,16 +178,14 @@ class Elf:
                 )
                 self.sections.append(section)
 
-            ptr += 0x28
-            i += 1
+            ptr += SECTION_HEADER_SIZE
 
         assert self.shstrtab is not None, "no shstrtab!"
         assert self.strtab is not None, "no strtab!"
         assert self.symtab is not None, "no symtab!"
 
-        for i, section in enumerate(self.sections):
+        for section in self.sections:
             section.name = self.shstrtab.get_symbol_by_index(section.sh_name)
-            # section.index = i
 
         for symbol in self.symtab.symbols:
             symbol.name = self.strtab.get_symbol_by_index(symbol.st_name)
@@ -215,28 +218,6 @@ class Elf:
                 elif section.name == ".rodata":
                     self.rodata_sections.append(section)
 
-        # for i, symbol in enumerate(self.symtab.symbols):
-        #     if self.sections[symbol.st_shndx].name == ".rodata":
-        #         if symbol.st_name == 0:
-        #             # assume this is an assembly file without symbols ?
-        #             continue
-
-        #         # this is a rodata symbol, we need to find it's corresponding reloc
-        #         # the reloc will point to the corresponding .text section(s) that reference the symbol
-        #         reloc_sh_infos = set()
-        #         for reloc in self.relocations:
-        #             for relocation in reloc.relocations:
-        #                 if relocation.symbol_index == i:
-        #                     reloc_sh_infos.add(reloc.sh_info)
-
-        #         if len(reloc_sh_infos) == 0:
-        #             raise Exception(f"No relocation record found for .rodata symbol {symbol.name}")
-        #         self.rodata_refs[symbol] = reloc_sh_infos
-
-        # for k, vs in self.rodata_refs.items():
-        #     for v in vs:
-        #         print(f"name: {k.name}, section index: {k.st_shndx}, function: {self.sections[v].function_name}")
-
     def add_sh_symbol(self, symbol_name: str):
         return self.shstrtab.add_symbol(symbol_name)
 
@@ -258,10 +239,10 @@ class Elf:
 
         return len(self.sections) - 1
 
-    def get_relocations(self) -> List["RelocationRecord"]:
+    def get_relocations(self) -> list["RelocationRecord"]:
         return self.relocations
 
-    def get_functions(self) -> List["TextSection"]:
+    def get_functions(self) -> list["TextSection"]:
         return self.functions
 
     @staticmethod
@@ -437,7 +418,7 @@ class Section:
 
     @staticmethod
     def unpack_header(data):
-        return struct.unpack(Section.fmt, data[0:0x28])
+        return struct.unpack(Section.fmt, data[0:SECTION_HEADER_SIZE])
 
     def pack_header(self) -> bytes:
         return struct.pack(
@@ -459,7 +440,7 @@ class Section:
     def pack_data(self) -> bytes:
         return self.data
 
-    def pack(self) -> Tuple[bytes, bytes]:
+    def pack(self) -> tuple[bytes, bytes]:
         data = self.pack_data()
         header = self.pack_header()
         return (header, data)
@@ -508,7 +489,7 @@ class BssSection(Section):
 
 
 class Symtab(Section):
-    symbols: List[Symbol]
+    symbols: list[Symbol]
 
     def _handle_data(self, data: bytes) -> bytes:
         self.symbols = []
@@ -518,7 +499,7 @@ class Symtab(Section):
             ptr += 0x10
         return data
 
-    def get_symbol_by_name(self, name) -> Tuple[Optional[int], Optional[Symbol]]:
+    def get_symbol_by_name(self, name) -> tuple[Optional[int], Optional[Symbol]]:
         for i, symbol in enumerate(self.symbols):
             if symbol.name == name:
                 return (i, symbol)
@@ -544,7 +525,7 @@ class Symtab(Section):
 
 
 class Strtab(Section):
-    symbols: List[str]
+    symbols: list[str]
 
     def _handle_data(self, data: bytes) -> bytes:
         self.symbols = []
