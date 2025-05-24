@@ -110,6 +110,9 @@ class Preprocessor:
             if line.startswith("/* Handwritten function"):
                 # ignore handwritten comment
                 continue
+            if line.startswith("#"):
+                # ignore comment lines
+                continue
 
             nops_needed += 1
 
