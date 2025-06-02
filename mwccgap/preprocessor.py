@@ -3,6 +3,7 @@ import ast
 
 from pathlib import Path
 from typing import Dict, Optional, TextIO
+from dataclasses import dataclass
 
 from .constants import (
     SYMBOL_AT,
@@ -11,7 +12,15 @@ from .constants import (
     INCLUDE_ASM_REGEX,
     INCLUDE_RODATA,
     INCLUDE_RODATA_REGEX,
+    LOCAL_SUFFIX,
 )
+
+
+@dataclass
+class Symbol:
+    name: str
+    size: int = 0
+    local: bool = False
 
 
 class Preprocessor:
@@ -25,9 +34,9 @@ class Preprocessor:
     def preprocess_s_file(
         function_name: str,
         textio: TextIO,
-    ) -> tuple[list[str], Dict[str, int]]:
+    ) -> tuple[list[str], Dict[str, Symbol]]:
         # mwcc creates a .rodata section per rodata symbol so we need to track them individually
-        rodata_entries: Dict[str, int] = {}
+        rodata_entries: Dict[str, Symbol] = {}
         c_lines: list[str] = []
         nops_needed = 0
 
@@ -53,39 +62,44 @@ class Preprocessor:
                     continue
                 if line.startswith(".size"):
                     continue
+
                 if line.startswith("glabel") or line.startswith("dlabel"):
-                    _, rodata_symbol = line.split(" ")
-                    rodata_entries[rodata_symbol] = 0
+                    is_local = line.endswith(LOCAL_SUFFIX)
+                    line = line.removesuffix(LOCAL_SUFFIX)
+                    _, current_symbol = line.split(" ")
+                    rodata_entries[current_symbol] = Symbol(
+                        current_symbol, local=is_local
+                    )
                     continue
 
                 if " .byte " in line:
-                    rodata_entries[rodata_symbol] += 1
+                    rodata_entries[current_symbol].size += 1
                     continue
                 if " .short " in line:
-                    rodata_entries[rodata_symbol] += 2
+                    rodata_entries[current_symbol].size += 2
                     continue
                 if " .word " in line or " .long " in line:
-                    rodata_entries[rodata_symbol] += 4
+                    rodata_entries[current_symbol].size += 4
                     continue
 
                 if " .float " in line:
-                    rodata_entries[rodata_symbol] += 4
+                    rodata_entries[current_symbol].size += 4
                     continue
                 if " .double " in line:
-                    rodata_entries[rodata_symbol] += 8
+                    rodata_entries[current_symbol].size += 8
                     continue
 
                 if " .ascii " in line:
                     *_, text = line.split(" .ascii ")
                     text = text.strip()
-                    rodata_entries[rodata_symbol] += len(
+                    rodata_entries[current_symbol].size += len(
                         ast.literal_eval(text)
                     )  # no NUL terminator
                     continue
                 if " .asciz " in line:
                     *_, text = line.split(" .asciz ")
                     text = text.strip()
-                    rodata_entries[rodata_symbol] += (
+                    rodata_entries[current_symbol].size += (
                         len(ast.literal_eval(text)) + 1
                     )  # NUL terminator
                     continue
@@ -128,11 +142,18 @@ class Preprocessor:
             nops = nops_needed * ["nop"]
             c_lines.extend([f"asm void {function_name}() {{", *nops, "}"])
 
-        for symbol, size in rodata_entries.items():
-            if symbol.startswith('"@') and symbol.endswith('"'):
-                symbol = SYMBOL_AT + symbol.removeprefix('"@').removesuffix('"')
+        for symbol in rodata_entries.values():
+            static = "static " if symbol.local else ""
+
+            if symbol.name.startswith('"@') and symbol.name.endswith('"'):
+                symbol.name = SYMBOL_AT + symbol.name.removeprefix('"@').removesuffix(
+                    '"'
+                )
+
             c_lines.append(
-                f"const unsigned char {symbol}[{size}] = {{" + size * "0, " + "};",
+                f"{static}const unsigned char {symbol.name}[{symbol.size}] = {{"
+                + symbol.size * "0, "
+                + "};",
             )
 
         return (c_lines, rodata_entries)
