@@ -10,6 +10,18 @@ class TestPreprocessSFile(unittest.TestCase):
         self.assertEqual(0, len(c_lines))
         self.assertEqual(0, len(rodata_entries))
 
+    def test_empty_function(self):
+        asm_contents = """
+.section .text
+glabel empty_func
+""".strip()
+
+        c_lines, rodata_entries = Preprocessor().preprocess_s_file(
+            "text_only.s", asm_contents.splitlines()
+        )
+        self.assertEqual(0, len(c_lines))
+        self.assertEqual(0, len(rodata_entries))
+
     def test_simple(self):
         asm_contents = """
 .set noat      /* allow manual use of $at */
@@ -60,8 +72,8 @@ dlabel literal_515_00552620
 
         self.assertEqual(1, len(c_lines))
         self.assertEqual(1, len(rodata_entries))
-        self.assertTrue("literal_515_00552620" in rodata_entries)
-        self.assertEqual(12 * 4, rodata_entries["literal_515_00552620"])
+        self.assertIn("literal_515_00552620", rodata_entries)
+        self.assertEqual(12 * 4, rodata_entries["literal_515_00552620"].size)
 
     def test_rodata_asciz(self):
         asm_contents = """
@@ -80,8 +92,20 @@ dlabel foobar
 
         self.assertEqual(1, len(c_lines))
         self.assertEqual(1, len(rodata_entries))
-        self.assertTrue("foobar" in rodata_entries)
-        self.assertEqual(13 * 1, rodata_entries["foobar"])
+        self.assertIn("foobar", rodata_entries)
+        self.assertEqual((len("SHAUN PALMER") + 1) * 1, rodata_entries["foobar"].size)
+
+    def test_ascii_with_escaped_chars(self):
+        asm_contents = """
+.section .rodata
+dlabel hello
+    /* 1DAB48 002DAAC8 */ .ascii "Line1\\nLine2"
+""".strip()
+
+        _, rodata_entries = Preprocessor().preprocess_s_file(
+            "ascii.s", asm_contents.splitlines()
+        )
+        self.assertEqual(len("Line1\nLine2"), rodata_entries["hello"].size)
 
     def test_rodata_float(self):
         asm_contents = """
@@ -108,5 +132,46 @@ dlabel _1024sintable45
 
         self.assertEqual(1, len(c_lines))
         self.assertEqual(1, len(rodata_entries))
-        self.assertTrue("_1024sintable45" in rodata_entries)
-        self.assertEqual(12 * 4, rodata_entries["_1024sintable45"])
+        self.assertIn("_1024sintable45", rodata_entries)
+        self.assertEqual(12 * 4, rodata_entries["_1024sintable45"].size)
+
+    def test_local_symbol(self):
+        asm_contents = """
+        .section .rodata
+
+        glabel D_psp_0914A7B8, local
+            /* 6DE38 0914A7B8 */ .word 0x12345678
+        """
+        c_lines, rodata_entries = Preprocessor().preprocess_s_file(
+            "local.s", asm_contents.splitlines()
+        )
+
+        self.assertEqual(1, len(c_lines))
+        self.assertEqual(1, len(rodata_entries))
+        self.assertIn("D_psp_0914A7B8", rodata_entries)
+        self.assertEqual(1 * 4, rodata_entries["D_psp_0914A7B8"].size)
+        self.assertTrue(rodata_entries["D_psp_0914A7B8"].local)
+        self.assertTrue(c_lines[0].startswith("static "))
+
+
+class TestPreprocessSFileExceptions(unittest.TestCase):
+    def test_rodata_unknown_directive(self):
+        asm_contents = """
+.section .rodata
+dlabel my_literal
+    .weird 0x1234
+""".strip()
+
+        with self.assertRaises(ValueError) as e:
+            Preprocessor().preprocess_s_file("unknown.s", asm_contents.splitlines())
+        self.assertIn("Unexpected entry", str(e.exception))
+
+    def test_malformed_label(self):
+        asm_contents = """
+.section .rodata
+glabel
+    .word 0x12345678
+""".strip()
+
+        with self.assertRaises(ValueError):
+            Preprocessor().preprocess_s_file("bad_label.s", asm_contents.splitlines())

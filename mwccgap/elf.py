@@ -252,7 +252,7 @@ class Elf:
     def pack(self):
         elf_header_size = 0x40
 
-        sh_offset = elf_header_size  # 0x34 + 0xC palignment
+        sh_offset = elf_header_size  # 0x34 + 0xC alignment
 
         section_headers = bytes()
         section_data = bytes()

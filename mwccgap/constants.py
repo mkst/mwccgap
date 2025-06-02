@@ -6,3 +6,5 @@ INCLUDE_RODATA_REGEX = rf'{INCLUDE_RODATA}\("(.*)", (.*)\)'
 
 FUNCTION_PREFIX = "mwccgap_"
 SYMBOL_AT = "__at__"
+
+LOCAL_SUFFIX = ", local"
