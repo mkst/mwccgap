@@ -11,7 +11,6 @@ class TestPreprocessSFile(unittest.TestCase):
         self.assertEqual(0, len(rodata_entries))
 
     def test_simple(self):
-
         asm_contents = """
 .set noat      /* allow manual use of $at */
 .set noreorder /* don't insert nops after branches */
@@ -83,3 +82,31 @@ dlabel foobar
         self.assertEqual(1, len(rodata_entries))
         self.assertTrue("foobar" in rodata_entries)
         self.assertEqual(13 * 1, rodata_entries["foobar"])
+
+    def test_rodata_float(self):
+        asm_contents = """
+.section .rodata
+
+dlabel _1024sintable45
+    /* 1E5000 002E4F80 00000000 */ .float 0
+    /* 1E5004 002E4F84 F3043544 */ .float 724.0773315
+    /* 1E5008 002E4F88 00008044 */ .float 1024
+    /* 1E500C 002E4F8C F3043544 */ .float 724.0773315
+    /* 1E5010 002E4F90 00000000 */ .float 0
+    /* 1E5014 002E4F94 F30435C4 */ .float -724.0773315
+    /* 1E5018 002E4F98 000080C4 */ .float -1024
+    /* 1E501C 002E4F9C F30435C4 */ .float -724.0773315
+    /* 1E5020 002E4FA0 00000000 */ .float 0
+    /* 1E5024 002E4FA4 00000000 */ .float 0
+    /* 1E5028 002E4FA8 00000000 */ .float 0
+    /* 1E502C 002E4FAC 00000000 */ .float 0
+.size _1024sintable45, . - _1024sintable45
+""".strip()
+        c_lines, rodata_entries = Preprocessor().preprocess_s_file(
+            "float.s", asm_contents.splitlines()
+        )
+
+        self.assertEqual(1, len(c_lines))
+        self.assertEqual(1, len(rodata_entries))
+        self.assertTrue("_1024sintable45" in rodata_entries)
+        self.assertEqual(12 * 4, rodata_entries["_1024sintable45"])

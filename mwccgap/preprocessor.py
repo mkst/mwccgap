@@ -57,14 +57,22 @@ class Preprocessor:
                     _, rodata_symbol = line.split(" ")
                     rodata_entries[rodata_symbol] = 0
                     continue
+
                 if " .byte " in line:
                     rodata_entries[rodata_symbol] += 1
                     continue
                 if " .short " in line:
                     rodata_entries[rodata_symbol] += 2
                     continue
-                if " .word " in line:
+                if " .word " in line or " .long " in line:
                     rodata_entries[rodata_symbol] += 4
+                    continue
+
+                if " .float " in line:
+                    rodata_entries[rodata_symbol] += 4
+                    continue
+                if " .double " in line:
+                    rodata_entries[rodata_symbol] += 8
                     continue
 
                 if " .ascii " in line:
