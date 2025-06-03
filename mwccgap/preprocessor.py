@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from .constants import (
     SYMBOL_AT,
+    SYMBOL_DOLLAR,
+    DOLLAR_SIGN,
     FUNCTION_PREFIX,
     INCLUDE_ASM,
     INCLUDE_ASM_REGEX,
@@ -64,9 +66,10 @@ class Preprocessor:
                     continue
 
                 if line.startswith("glabel") or line.startswith("dlabel"):
-                    is_local = line.endswith(LOCAL_SUFFIX)
-                    line = line.removesuffix(LOCAL_SUFFIX)
-                    _, current_symbol = line.split(" ")
+                    _, current_symbol = line.removesuffix(LOCAL_SUFFIX).split(" ")
+                    is_local = (
+                        line.endswith(LOCAL_SUFFIX) or DOLLAR_SIGN in current_symbol
+                    )
                     rodata_entries[current_symbol] = Symbol(
                         current_symbol, local=is_local
                     )
@@ -149,6 +152,8 @@ class Preprocessor:
                 symbol.name = SYMBOL_AT + symbol.name.removeprefix('"@').removesuffix(
                     '"'
                 )
+            elif DOLLAR_SIGN in symbol.name:
+                symbol.name = symbol.name.replace(DOLLAR_SIGN, SYMBOL_DOLLAR)
 
             c_lines.append(
                 f"{static}const unsigned char {symbol.name}[{symbol.size}] = {{"
