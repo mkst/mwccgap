@@ -6,7 +6,12 @@ from typing import List, Optional
 
 from .assembler import Assembler
 from .compiler import Compiler
-from .constants import FUNCTION_PREFIX, SYMBOL_AT
+from .constants import (
+    FUNCTION_PREFIX,
+    SYMBOL_AT,
+    SYMBOL_DOLLAR,
+    DOLLAR_SIGN,
+)
 from .elf import Elf, TextSection, Relocation
 from .preprocessor import Preprocessor
 
@@ -73,6 +78,10 @@ def process_c_file(
 
         elif symbol.name.startswith(SYMBOL_AT):
             symbol.name = "@" + symbol.name.removeprefix(SYMBOL_AT)
+            symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
+
+        elif SYMBOL_DOLLAR in symbol.name:
+            symbol.name = symbol.name.replace(SYMBOL_DOLLAR, DOLLAR_SIGN)
             symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
 
         symbol_to_section_idx[symbol.name] = symbol.st_shndx

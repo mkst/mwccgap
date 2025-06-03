@@ -137,10 +137,10 @@ dlabel _1024sintable45
 
     def test_local_symbol(self):
         asm_contents = """
-        .section .rodata
+.section .rodata
 
-        glabel D_psp_0914A7B8, local
-            /* 6DE38 0914A7B8 */ .word 0x12345678
+glabel D_psp_0914A7B8, local
+    /* 6DE38 0914A7B8 */ .word 0x12345678
         """
         c_lines, rodata_entries = Preprocessor().preprocess_s_file(
             "local.s", asm_contents.splitlines()
@@ -151,6 +151,26 @@ dlabel _1024sintable45
         self.assertIn("D_psp_0914A7B8", rodata_entries)
         self.assertEqual(1 * 4, rodata_entries["D_psp_0914A7B8"].size)
         self.assertTrue(rodata_entries["D_psp_0914A7B8"].local)
+        self.assertTrue(c_lines[0].startswith("static "))
+
+    def test_dollar_symbol(self):
+        asm_contents = """
+.section .rodata
+
+dlabel foo$bar$baz
+    /* 1E5000 002E4F80 00000000 */ .word 0x1234
+.size foo$bar$baz, . - foo$bar$baz
+"""
+        c_lines, rodata_entries = Preprocessor().preprocess_s_file(
+            "dollar.s", asm_contents.splitlines()
+        )
+        expected_symbol_name = "foo$bar$baz"
+
+        self.assertEqual(1, len(c_lines))
+        self.assertEqual(1, len(rodata_entries))
+        self.assertIn(expected_symbol_name, rodata_entries)
+        self.assertEqual(1 * 4, rodata_entries[expected_symbol_name].size)
+        self.assertTrue(rodata_entries[expected_symbol_name].local)
         self.assertTrue(c_lines[0].startswith("static "))
 
 
