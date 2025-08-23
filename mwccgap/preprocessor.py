@@ -64,6 +64,8 @@ class Preprocessor:
                     continue
                 if line.startswith(".size"):
                     continue
+                if line.startswith("enddlabel") or line.startswith("nmlabel"):
+                    continue
 
                 if line.startswith("glabel") or line.startswith("dlabel"):
                     _, current_symbol = line.removesuffix(LOCAL_SUFFIX).split(" ")
@@ -123,8 +125,14 @@ class Preprocessor:
             if line.startswith(".align") or line.startswith(".balign"):
                 # ignore alignment
                 continue
-            if line.startswith("glabel") or line.startswith("jlabel"):
+            if line.startswith("glabel") or line.startswith("jlabel") or line.startswith("alabel"):
                 # ignore function / jumptable labels
+                continue
+            if line.startswith("endlabel") or line.startswith("enddlabel"):
+                # ignore function / symbol ends
+                continue
+            if line.startswith("nmlabel"):
+                # ignore non matching marker
                 continue
             if line.startswith(".L") and line.endswith(":"):
                 # ignore labels
