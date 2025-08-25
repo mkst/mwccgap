@@ -131,7 +131,7 @@ class Preprocessor:
             if line.startswith("endlabel") or line.startswith("enddlabel"):
                 # ignore function / symbol ends
                 continue
-            if line.startswith("nmlabel"):
+            if line.startswith("nonmatching"):
                 # ignore non matching marker
                 continue
             if line.startswith(".L") and line.endswith(":"):
