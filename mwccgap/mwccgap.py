@@ -1,4 +1,5 @@
 import copy
+import sys
 import tempfile
 
 from pathlib import Path
@@ -14,6 +15,7 @@ from .constants import (
 )
 from .elf import Elf, TextSection, Relocation
 from .preprocessor import Preprocessor
+from .makerule import MakeRule
 
 
 def process_c_file(
@@ -41,6 +43,22 @@ def process_c_file(
             obj_bytes = compiler.compile_file(Path(temp_c_file.name))
     else:
         obj_bytes = compiler.compile_file(c_file)
+
+    if compiler.make_rule is not None:
+        rule = compiler.make_rule
+        if sys.stdin.isatty():
+            rule.source = str(c_file)
+        else:
+            rule.source = None
+        rule.target = str(o_file)
+        # in gcc mode, the dependency is writeen near the target
+        if compiler.gcc_deps:
+            d_file = o_file.with_suffix(f"{o_file.suffix}.d")
+        # in mw mode, it's written in cwd, if this is a tempfile, this output will not make sense
+        else:
+            d_file = c_file.with_suffix(".d")
+        d_file.parent.mkdir(exist_ok=True, parents=True)
+        d_file.write_bytes(rule.as_str().encode("utf-8"))
 
     precompiled_elf = Elf(obj_bytes)
     # for now we only care about the names of the functions that exist
