@@ -173,6 +173,27 @@ dlabel foo$bar$baz
         self.assertTrue(rodata_entries[expected_symbol_name].local)
         self.assertTrue(c_lines[0].startswith("static "))
 
+    def test_rodata_jlabel(self):
+        asm_contents = """
+.section .rodata
+
+jlabel D_psp_0893C06C
+    /* 3D760 0893C06C 28D59A08 */ .word D_psp_089AD528
+    /* 3D764 0893C070 00000000 */ .word 0x00000000
+.size D_psp_0893C06C, . - D_psp_0893C06C
+"""
+        c_lines, rodata_entries = Preprocessor().preprocess_s_file(
+            "jlabel.s", asm_contents.splitlines()
+        )
+        expected_symbol_name = "D_psp_0893C06C"
+
+        self.assertEqual(1, len(c_lines))
+        self.assertEqual(1, len(rodata_entries))
+        self.assertIn(expected_symbol_name, rodata_entries)
+        self.assertEqual(2 * 4, rodata_entries[expected_symbol_name].size)
+        self.assertTrue(rodata_entries[expected_symbol_name].local)
+        self.assertTrue(c_lines[0].startswith("static "))
+
 
 class TestPreprocessSFileExceptions(unittest.TestCase):
     def test_rodata_unknown_directive(self):
