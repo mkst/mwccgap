@@ -59,6 +59,10 @@ class Preprocessor:
 
                 raise Exception(f"Unsupported .section found at line {i+1}: {line}")
 
+            if line.startswith("/*") and line.endswith("*/"):
+                # skip pure comment lines
+                continue
+
             if in_rodata:
                 if line.startswith(".align"):
                     continue
@@ -125,7 +129,11 @@ class Preprocessor:
             if line.startswith(".align") or line.startswith(".balign"):
                 # ignore alignment
                 continue
-            if line.startswith("glabel") or line.startswith("jlabel") or line.startswith("alabel"):
+            if (
+                line.startswith("glabel")
+                or line.startswith("jlabel")
+                or line.startswith("alabel")
+            ):
                 # ignore function / jumptable labels
                 continue
             if line.startswith("endlabel") or line.startswith("enddlabel"):
