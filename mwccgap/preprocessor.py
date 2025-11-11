@@ -71,10 +71,12 @@ class Preprocessor:
                 if line.startswith("enddlabel") or line.startswith("nmlabel"):
                     continue
 
-                if line.startswith("glabel") or line.startswith("dlabel"):
+                if any(line.startswith(x) for x in ["glabel", "dlabel", "jlabel"]):
                     _, current_symbol = line.removesuffix(LOCAL_SUFFIX).split(" ")
                     is_local = (
-                        line.endswith(LOCAL_SUFFIX) or DOLLAR_SIGN in current_symbol
+                        line.endswith(LOCAL_SUFFIX)
+                        or DOLLAR_SIGN in current_symbol
+                        or line.startswith("jlabel")
                     )
                     rodata_entries[current_symbol] = Symbol(
                         current_symbol, local=is_local
