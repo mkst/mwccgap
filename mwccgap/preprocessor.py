@@ -59,7 +59,7 @@ class Preprocessor:
 
                 raise Exception(f"Unsupported .section found at line {i+1}: {line}")
 
-            if re.sub(r"/\*.*?\*/", "", line).strip() == "":
+            if line.endswith("*/") and line.count("/*") == 1:
                 # skip pure comment lines
                 continue
 
