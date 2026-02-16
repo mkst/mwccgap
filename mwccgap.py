@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--as-path", type=Path, default=Path("mipsel-linux-gnu-as"))
     parser.add_argument("--as-march", type=str, default="allegrex")
     parser.add_argument("--as-mabi", type=str, default="32")
+    parser.add_argument("--as-flags", nargs="*", default=[])
     parser.add_argument("--use-wibo", action="store_true")
     parser.add_argument("--wibo-path", type=Path, default=Path("wibo"))
     parser.add_argument("--asm-dir-prefix", type=Path)
@@ -35,7 +36,7 @@ def main() -> None:
 
     args, c_flags = parser.parse_known_args()
 
-    as_flags = ["-G0"]  # TODO: base this on -sdatathreshold value from c_flags
+    default_as_flags = ["-G0"]  # TODO: base this on -sdatathreshold value from c_flags
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".c", dir=args.src_dir) as temp_c_file:
@@ -53,9 +54,9 @@ def main() -> None:
                 as_path=args.as_path,
                 as_march=args.as_march,
                 as_mabi=args.as_mabi,
+                as_flags=default_as_flags + args.as_flags,
                 use_wibo=args.use_wibo,
                 wibo_path=args.wibo_path,
-                as_flags=as_flags,
                 asm_dir_prefix=args.asm_dir_prefix,
                 macro_inc_path=args.macro_inc_path,
                 c_file_encoding=args.target_encoding,
