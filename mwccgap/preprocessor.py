@@ -14,6 +14,7 @@ from .constants import (
     INCLUDE_ASM_REGEX,
     INCLUDE_RODATA,
     INCLUDE_RODATA_REGEX,
+    BLOCK_COMMENT_REGEX,
     LOCAL_SUFFIX,
 )
 
@@ -58,10 +59,6 @@ class Preprocessor:
                     continue
 
                 raise Exception(f"Unsupported .section found at line {i+1}: {line}")
-
-            if line.startswith("/*") and line.endswith("*/"):
-                # skip pure comment lines
-                continue
 
             if in_rodata:
                 if line.startswith(".align"):
@@ -150,6 +147,9 @@ class Preprocessor:
                 continue
             if line.startswith("/* Handwritten function"):
                 # ignore handwritten comment
+                continue
+            if line.startswith("/*") and re.sub(BLOCK_COMMENT_REGEX, "", line).strip() == "":
+                # ignore multi-line comments
                 continue
             if line.startswith("#"):
                 # ignore comment lines
