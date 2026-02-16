@@ -4,6 +4,8 @@ INCLUDE_ASM_REGEX = rf'{INCLUDE_ASM}\("(.*)", (.*)\)'
 INCLUDE_RODATA = "INCLUDE_RODATA"
 INCLUDE_RODATA_REGEX = rf'{INCLUDE_RODATA}\("(.*)", (.*)\)'
 
+BLOCK_COMMENT_REGEX = r"/\*.*?\*/"
+
 DOLLAR_SIGN = "$"
 
 FUNCTION_PREFIX = "mwccgap_"
