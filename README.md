@@ -48,7 +48,10 @@ Optional encoding that the input c file should be converted to, before being pas
 ### `--src-dir`
 Optional path to use when passing data over stdin to interpret relative path include statements.
 
-All additional arguments will be passed to the MWCC executable.
+### `--as-flags`
+Optional flags to pass to GNU as, defaults to `-G0`. If present, it must be the final argument.
+
+**NOTE:** Any additional arguments will be passed through to the MWCC executable.
 
 
 ## Quirks
