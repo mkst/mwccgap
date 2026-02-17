@@ -178,7 +178,12 @@ def process_c_file(
 
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
-        relocation_records = assembled_elf.get_relocations()
+        relocation_records = [
+            record for record in assembled_elf.get_relocations()
+                if record.name not in (
+                    ".rel.pdr",
+                )
+        ]
         assert (
             len(relocation_records) < 3
         ), f"{asm_file} has too many relocation records!"
