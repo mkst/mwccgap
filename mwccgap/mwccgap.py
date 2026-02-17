@@ -11,6 +11,7 @@ from .constants import (
     SYMBOL_AT,
     SYMBOL_DOLLAR,
     DOLLAR_SIGN,
+    IGNORED_RELOCATIONS,
 )
 from .elf import Elf, TextSection, Relocation
 from .preprocessor import Preprocessor
@@ -178,7 +179,10 @@ def process_c_file(
 
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
-        relocation_records = assembled_elf.get_relocations()
+        relocation_records = [
+            record for record in assembled_elf.get_relocations()
+                if record.name not in IGNORED_RELOCATIONS
+        ]
         assert (
             len(relocation_records) < 3
         ), f"{asm_file} has too many relocation records!"
