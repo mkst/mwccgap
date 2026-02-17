@@ -11,6 +11,7 @@ from .constants import (
     SYMBOL_AT,
     SYMBOL_DOLLAR,
     DOLLAR_SIGN,
+    IGNORED_RELOCATIONS,
 )
 from .elf import Elf, TextSection, Relocation
 from .preprocessor import Preprocessor
@@ -180,9 +181,7 @@ def process_c_file(
 
         relocation_records = [
             record for record in assembled_elf.get_relocations()
-                if record.name not in (
-                    ".rel.pdr",
-                )
+                if record.name not in IGNORED_RELOCATIONS
         ]
         assert (
             len(relocation_records) < 3
