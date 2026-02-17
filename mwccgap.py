@@ -8,11 +8,22 @@ from pathlib import Path
 from mwccgap.mwccgap import process_c_file
 
 
+class CustomTildeFormatter(argparse.HelpFormatter):
+    def format_help(self):
+        text = super().format_help()
+        return text.replace("~~", "--")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    """
+    Hack: We replace `--` with `~~` before parsing so argparse ignores user-supplied
+    flags meant for the assembler. The prefixes are restored afterward.
+    """
+    parser = argparse.ArgumentParser(
+        prefix_chars="~", formatter_class=CustomTildeFormatter
+    )
 
     read_from_file = sys.stdin.isatty()
-
     if not read_from_file:
         in_lines = sys.stdin.readlines()
         if len(in_lines) == 0:
@@ -21,24 +32,24 @@ def main() -> None:
     if read_from_file:
         parser.add_argument("c_file", type=Path)
 
+    parser.add_argument("o_file", type=Path)
+
     default_as_flags = ["-G0"]  # TODO: base this on -sdatathreshold value from c_flags
 
-    parser.add_argument("o_file", type=Path)
-    parser.add_argument("--mwcc-path", type=Path, default=Path("mwccpsp.exe"))
-    parser.add_argument("--as-path", type=Path, default=Path("mipsel-linux-gnu-as"))
-    parser.add_argument("--as-march", type=str, default="allegrex")
-    parser.add_argument("--as-mabi", type=str, default="32")
-    parser.add_argument(
-        "--as-flags", nargs=argparse.REMAINDER, default=default_as_flags
-    )
-    parser.add_argument("--use-wibo", action="store_true")
-    parser.add_argument("--wibo-path", type=Path, default=Path("wibo"))
-    parser.add_argument("--asm-dir-prefix", type=Path)
-    parser.add_argument("--macro-inc-path", type=Path)
-    parser.add_argument("--target-encoding", type=str)
-    parser.add_argument("--src-dir", type=Path)
+    parser.add_argument("~~mwcc-path", type=Path, default=Path("mwccpsp.exe"))
+    parser.add_argument("~~as-path", type=Path, default=Path("mipsel-linux-gnu-as"))
+    parser.add_argument("~~as-march", type=str, default="allegrex")
+    parser.add_argument("~~as-mabi", type=str, default="32")
+    parser.add_argument("~~as-flags", nargs="+", default=default_as_flags)
+    parser.add_argument("~~use-wibo", action="store_true")
+    parser.add_argument("~~wibo-path", type=Path, default=Path("wibo"))
+    parser.add_argument("~~asm-dir-prefix", type=Path)
+    parser.add_argument("~~macro-inc-path", type=Path)
+    parser.add_argument("~~target-encoding", type=str)
+    parser.add_argument("~~src-dir", type=Path)
 
-    args, c_flags = parser.parse_known_args()
+    argv = [x.replace("--", "~~") for x in sys.argv[1:]]
+    args, c_flags = parser.parse_known_args(argv)
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".c", dir=args.src_dir) as temp_c_file:
