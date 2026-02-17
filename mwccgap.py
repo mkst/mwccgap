@@ -36,19 +36,22 @@ def main() -> None:
 
     default_as_flags = ["-G0"]  # TODO: base this on -sdatathreshold value from c_flags
 
-    parser.add_argument("~~mwcc-path", type=Path, default=Path("mwccpsp.exe"))
-    parser.add_argument("~~as-path", type=Path, default=Path("mipsel-linux-gnu-as"))
-    parser.add_argument("~~as-march", type=str, default="allegrex")
-    parser.add_argument("~~as-mabi", type=str, default="32")
-    parser.add_argument("~~as-flags", nargs="*", default=default_as_flags)
-    parser.add_argument("~~use-wibo", action="store_true")
-    parser.add_argument("~~wibo-path", type=Path, default=Path("wibo"))
-    parser.add_argument("~~asm-dir-prefix", type=Path)
-    parser.add_argument("~~macro-inc-path", type=Path)
-    parser.add_argument("~~target-encoding", type=str)
-    parser.add_argument("~~src-dir", type=Path)
+    def add_argument(arg, **kwargs):
+        parser.add_argument(arg.replace("--", "~~"), **kwargs)
 
-    argv = [x.replace("--", "~~") for x in sys.argv[1:]]
+    add_argument("--mwcc-path", type=Path, default=Path("mwccpsp.exe"))
+    add_argument("--as-path", type=Path, default=Path("mipsel-linux-gnu-as"))
+    add_argument("--as-march", type=str, default="allegrex")
+    add_argument("--as-mabi", type=str, default="32")
+    add_argument("--as-flags", nargs="*", default=default_as_flags)
+    add_argument("--use-wibo", action="store_true")
+    add_argument("--wibo-path", type=Path, default=Path("wibo"))
+    add_argument("--asm-dir-prefix", type=Path)
+    add_argument("--macro-inc-path", type=Path)
+    add_argument("--target-encoding", type=str)
+    add_argument("--src-dir", type=Path)
+
+    argv = [arg.replace("--", "~~") for arg in sys.argv[1:]]
     args, c_flags = parser.parse_known_args(argv)
 
     try:
