@@ -40,7 +40,7 @@ def main() -> None:
     parser.add_argument("~~as-path", type=Path, default=Path("mipsel-linux-gnu-as"))
     parser.add_argument("~~as-march", type=str, default="allegrex")
     parser.add_argument("~~as-mabi", type=str, default="32")
-    parser.add_argument("~~as-flags", nargs="+", default=default_as_flags)
+    parser.add_argument("~~as-flags", nargs="*", default=default_as_flags)
     parser.add_argument("~~use-wibo", action="store_true")
     parser.add_argument("~~wibo-path", type=Path, default=Path("wibo"))
     parser.add_argument("~~asm-dir-prefix", type=Path)
