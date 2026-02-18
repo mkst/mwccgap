@@ -11,6 +11,7 @@ from .constants import (
     SYMBOL_AT,
     SYMBOL_DOLLAR,
     DOLLAR_SIGN,
+    SYMBOL_SINIT,
     IGNORED_RELOCATIONS,
 )
 from .elf import Elf, TextSection, Relocation
@@ -61,11 +62,15 @@ def process_c_file(
         return
 
     # 3. compile the modified .c file for real
+    temp_c_file_name = None
     with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
         temp_c_file.write("\n".join(out_lines).encode(c_file_encoding or "utf-8"))
         temp_c_file.flush()
 
-        obj_bytes = compiler.compile_file(Path(temp_c_file.name))
+        temp_c_file_path = Path(temp_c_file.name)
+        temp_c_file_name = temp_c_file_path.name
+        obj_bytes = compiler.compile_file(temp_c_file_path)
+
 
     compiled_elf = Elf(obj_bytes)
 
@@ -83,6 +88,10 @@ def process_c_file(
 
         elif SYMBOL_DOLLAR in symbol.name:
             symbol.name = symbol.name.replace(SYMBOL_DOLLAR, DOLLAR_SIGN)
+            symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
+
+        elif symbol.name.find(SYMBOL_SINIT + temp_c_file_name) != -1:
+            symbol.name = symbol.name.strip().replace(temp_c_file_name, c_file.name)
             symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
 
         symbol_to_section_idx[symbol.name] = symbol.st_shndx
