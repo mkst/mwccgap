@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 import tempfile
@@ -48,7 +47,6 @@ class Compiler:
             stdout=subprocess.PIPE,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=dict(os.environ, MWCIncludes="."),  # TODO: remove this?
         ) as proc:
             return proc.communicate()
 
