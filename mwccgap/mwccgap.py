@@ -91,7 +91,12 @@ def process_c_file(
             symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
 
         elif symbol.name.find(SYMBOL_SINIT + temp_c_file_name) != -1:
-            symbol.name = symbol.name.strip().replace(temp_c_file_name, c_file.name)
+            # mwcc pads these symbol names with spaces
+            old = temp_c_file_name.ljust(len(c_file.name))
+            new = c_file.name.ljust(len(old))
+            assert len(old) == len(new)
+            symbol.name = symbol.name.replace(old, new)
+            assert symbol.name.find(temp_c_file_name) == -1
             symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
 
         symbol_to_section_idx[symbol.name] = symbol.st_shndx
