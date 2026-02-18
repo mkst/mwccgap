@@ -30,6 +30,9 @@ The `-march=` value to pass to GNU as, defaults to `allegrex`
 ### `--as-mabi`
 The `-mabi=` value to pass to GNU as, defaults to `32`
 
+### `--as-flags`
+Additional flags to pass to GNU as, defaults to `-G0`.
+
 ### `--use-wibo`
 Whether or not to prefix the call to the MWCC executable with [wibo](https://github.com/decompals/wibo), defaults to **false**.
 
@@ -48,7 +51,8 @@ Optional encoding that the input c file should be converted to, before being pas
 ### `--src-dir`
 Optional path to use when passing data over stdin to interpret relative path include statements.
 
-All additional arguments will be passed to the MWCC executable.
+
+**NOTE:** Any additional arguments will be passed through to the MWCC executable.
 
 
 ## Quirks

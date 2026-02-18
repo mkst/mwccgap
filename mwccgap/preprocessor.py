@@ -148,7 +148,10 @@ class Preprocessor:
             if line.startswith("/* Handwritten function"):
                 # ignore handwritten comment
                 continue
-            if line.startswith("/*") and re.sub(BLOCK_COMMENT_REGEX, "", line).strip() == "":
+            if (
+                line.startswith("/*")
+                and re.sub(BLOCK_COMMENT_REGEX, "", line).strip() == ""
+            ):
                 # ignore multi-line comments
                 continue
             if line.startswith("#"):
