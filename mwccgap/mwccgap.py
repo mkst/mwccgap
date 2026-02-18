@@ -180,8 +180,9 @@ def process_c_file(
             rel_rodata_sh_name = compiled_elf.add_sh_symbol(".rel.rodata")
 
         relocation_records = [
-            record for record in assembled_elf.get_relocations()
-                if record.name not in IGNORED_RELOCATIONS
+            record
+            for record in assembled_elf.get_relocations()
+            if record.name not in IGNORED_RELOCATIONS
         ]
         assert (
             len(relocation_records) < 3

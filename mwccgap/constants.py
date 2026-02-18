@@ -14,6 +14,4 @@ SYMBOL_DOLLAR = "__dollar__"
 
 LOCAL_SUFFIX = ", local"
 
-IGNORED_RELOCATIONS = (
-    ".rel.pdr",
-)
+IGNORED_RELOCATIONS = (".rel.pdr",)
