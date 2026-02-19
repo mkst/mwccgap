@@ -10,9 +10,9 @@ SHT_NOBITS = 8
 SHT_REL = 9
 
 FUNCTION_ST_INFOS = (
-    0x12, # global functions
-    0x02, # local functions
-    0xD2, # MWCC C++ virtual destructors
+    0x12,  # global functions
+    0x02,  # local functions
+    0xD2,  # MWCC C++ virtual destructors
 )
 
 
