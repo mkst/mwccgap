@@ -11,6 +11,7 @@ DOLLAR_SIGN = "$"
 FUNCTION_PREFIX = "mwccgap_"
 SYMBOL_AT = "__at__"
 SYMBOL_DOLLAR = "__dollar__"
+SYMBOL_SINIT = "__sinit_"
 
 LOCAL_SUFFIX = ", local"
 

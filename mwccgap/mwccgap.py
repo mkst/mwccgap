@@ -11,6 +11,7 @@ from .constants import (
     SYMBOL_AT,
     SYMBOL_DOLLAR,
     DOLLAR_SIGN,
+    SYMBOL_SINIT,
     IGNORED_RELOCATIONS,
 )
 from .elf import Elf, TextSection, Relocation
@@ -65,7 +66,9 @@ def process_c_file(
         temp_c_file.write("\n".join(out_lines).encode(c_file_encoding or "utf-8"))
         temp_c_file.flush()
 
-        obj_bytes = compiler.compile_file(Path(temp_c_file.name))
+        temp_c_file_path = Path(temp_c_file.name)
+        temp_c_file_name = temp_c_file_path.name
+        obj_bytes = compiler.compile_file(temp_c_file_path)
 
     compiled_elf = Elf(obj_bytes)
 
@@ -83,6 +86,10 @@ def process_c_file(
 
         elif SYMBOL_DOLLAR in symbol.name:
             symbol.name = symbol.name.replace(SYMBOL_DOLLAR, DOLLAR_SIGN)
+            symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
+
+        elif symbol.name.find(SYMBOL_SINIT + temp_c_file_name) != -1:
+            symbol.name = replace_sinit(symbol.name, temp_c_file_name, c_file.name)
             symbol.st_name = compiled_elf.strtab.add_symbol(symbol.name)
 
         symbol_to_section_idx[symbol.name] = symbol.st_shndx
@@ -279,3 +286,37 @@ def process_c_file(
 
     o_file.parent.mkdir(exist_ok=True, parents=True)
     o_file.write_bytes(compiled_elf.pack())
+
+
+def replace_sinit(symbol_name, temp_file_name, c_file_name):
+    """
+    Substitute original file name into MWCC static initializer symbol names
+
+    When files contain static initializer code (e.g. static definitions
+    referencing the address of another static variable), MWCC emits the
+    symbols:
+    - `.p__sinit_foo.cpp[...]`
+    - `__sinit_foo.cpp[...]`
+    - `.mwcats___sinit_foo.cpp[...]`
+    where `[...]` is enough space characters to fill the symbol name buffer.
+
+    `.p__sinit_foo.cpp` is a pointer object in the `.ctor` section, with a
+    reloc pointing to `__sinit_foo.cpp`. This is linked into a table alongside
+    every other `.p__sinit_*` symbol so that the runtime support can call the
+    static initailizer code before passing control to the application.
+
+    `__sinit_foo.cpp` is a function in the `.init` section, containing the
+    static initializer instructions. `.mwcats__sinit_foo.cpp` is a proprietary
+    debugging section.
+
+    Since we are compiling a temporary file, MWCC generates these symbols
+    using the temporary file's name. We replace it with the original file name
+    to operate transparently & enable linking these symbols.
+    """
+    # symmetrically ljust to handle both smaller & longer cases
+    old = temp_file_name.ljust(len(c_file_name))
+    new = c_file_name.ljust(len(old))
+    assert len(old) == len(new)
+    fixed_name = symbol_name.replace(old, new)
+    assert fixed_name.find(temp_file_name) == -1
+    return fixed_name
