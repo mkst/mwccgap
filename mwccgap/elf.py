@@ -9,6 +9,12 @@ SHT_RELA = 4
 SHT_NOBITS = 8
 SHT_REL = 9
 
+FUNCTION_ST_INFOS = (
+    0x12,  # global functions
+    0x02,  # local functions
+    0xD2,  # MWCC C++ virtual destructors
+)
+
 
 class Elf:
     e_ident: int
@@ -194,7 +200,7 @@ class Elf:
         function_names = [
             s.name
             for s in sorted(
-                filter(lambda x: x.st_info in (0x12, 0x02), self.symtab.symbols),
+                filter(lambda x: x.st_info in FUNCTION_ST_INFOS, self.symtab.symbols),
                 key=lambda x: x.st_shndx,
             )
         ]
