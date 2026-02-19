@@ -3,6 +3,7 @@ import unittest
 
 from mwccgap.mwccgap import replace_sinit
 
+
 class TestPreprocessSFile(unittest.TestCase):
     def test_unrelated(self):
         symbol_name = "some_function"

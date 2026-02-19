@@ -70,7 +70,6 @@ def process_c_file(
         temp_c_file_name = temp_c_file_path.name
         obj_bytes = compiler.compile_file(temp_c_file_path)
 
-
     compiled_elf = Elf(obj_bytes)
 
     rel_text_sh_name = compiled_elf.add_sh_symbol(".rel.text")
@@ -287,8 +286,9 @@ def process_c_file(
     o_file.parent.mkdir(exist_ok=True, parents=True)
     o_file.write_bytes(compiled_elf.pack())
 
+
 def replace_sinit(symbol_name, temp_file_name, c_file_name):
-    '''
+    """
     Substitute original file name into MWCC static initializer symbol names
 
     When files contain static initializer code (e.g. static definitions
@@ -311,7 +311,7 @@ def replace_sinit(symbol_name, temp_file_name, c_file_name):
     Since we are compiling a temporary file, MWCC generates these symbols
     using the temporary file's name. We replace it with the original file name
     to operate transparently & enable linking these symbols.
-    '''
+    """
     # symmetrically ljust to handle both smaller & longer cases
     old = temp_file_name.ljust(len(c_file_name))
     new = c_file_name.ljust(len(old))
