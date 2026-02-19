@@ -62,7 +62,6 @@ def process_c_file(
         return
 
     # 3. compile the modified .c file for real
-    temp_c_file_name = None
     with tempfile.NamedTemporaryFile(suffix=".c", dir=c_file.parent) as temp_c_file:
         temp_c_file.write("\n".join(out_lines).encode(c_file_encoding or "utf-8"))
         temp_c_file.flush()
