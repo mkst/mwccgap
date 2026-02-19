@@ -4,7 +4,7 @@ import unittest
 from mwccgap.mwccgap import replace_sinit
 
 
-class TestPreprocessSFile(unittest.TestCase):
+class TestSinitSymbolNames(unittest.TestCase):
     def test_unrelated(self):
         symbol_name = "some_function"
         result = replace_sinit(symbol_name, "tmp12234567.c", "test.cpp")
