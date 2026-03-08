@@ -293,12 +293,14 @@ def replace_sinit(symbol_name, temp_file_name, c_file_name):
     Substitute original file name into MWCC static initializer symbol names
 
     When files contain static initializer code (e.g. static definitions
-    referencing the address of another static variable), MWCC emits the
-    symbols:
-    - `.p__sinit_foo.cpp[...]`
-    - `__sinit_foo.cpp[...]`
-    - `.mwcats___sinit_foo.cpp[...]`
-    where `[...]` is enough space characters to fill the symbol name buffer.
+    referencing the address of another static variable), MWCC emits the symbols:
+    - `.p__sinit_foo.cpp`
+    - `__sinit_foo.cpp`
+    - `.mwcats___sinit_foo.cpp`
+
+    On certain versions of MWCC, the symbol generation code is bugged. When
+    generating the symbol name, the first character is treated as the minimum
+    format width and the filename is right padded.
 
     `.p__sinit_foo.cpp` is a pointer object in the `.ctor` section, with a
     reloc pointing to `__sinit_foo.cpp`. This is linked into a table alongside
@@ -313,10 +315,12 @@ def replace_sinit(symbol_name, temp_file_name, c_file_name):
     using the temporary file's name. We replace it with the original file name
     to operate transparently & enable linking these symbols.
     """
-    # symmetrically ljust to handle both smaller & longer cases
-    old = temp_file_name.ljust(len(c_file_name))
-    new = c_file_name.ljust(len(old))
-    assert len(old) == len(new)
-    fixed_name = symbol_name.replace(old, new)
-    assert fixed_name.find(temp_file_name) == -1
-    return fixed_name
+    prefix, _, symbol_file_name = symbol_name.partition(SYMBOL_SINIT)
+    assert len(symbol_file_name) > 0
+
+    # MWCC bug: filename is padded based on first character of file name
+    if len(symbol_file_name) > len(temp_file_name):
+        assert symbol_file_name == temp_file_name.ljust(ord(temp_file_name[0]))
+        return prefix + SYMBOL_SINIT + c_file_name.ljust(ord(c_file_name[0]))
+
+    return prefix + SYMBOL_SINIT + c_file_name
