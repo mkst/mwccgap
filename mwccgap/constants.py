@@ -16,3 +16,15 @@ SYMBOL_SINIT = "__sinit_"
 LOCAL_SUFFIX = ", local"
 
 IGNORED_RELOCATIONS = (".rel.pdr",)
+
+BEFORE_PREPROCESSED_LINES = """
+#ifdef __cplusplus
+extern "C" {
+#endif
+""".splitlines()
+
+AFTER_PREPROCESSED_LINES = """
+#ifdef __cplusplus
+}
+#endif
+""".splitlines()
