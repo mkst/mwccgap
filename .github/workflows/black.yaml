@@ -10,6 +10,6 @@ jobs:
   black:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: python3 -m pip install --user black==24.4.2
       - run: python3 -m black . --check
