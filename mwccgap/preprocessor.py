@@ -16,9 +16,20 @@ from .constants import (
     INCLUDE_RODATA_REGEX,
     BLOCK_COMMENT_REGEX,
     LOCAL_SUFFIX,
-    BEFORE_PREPROCESSED_LINES,
-    AFTER_PREPROCESSED_LINES,
 )
+
+
+C_MACRO_START = """
+#ifdef __cplusplus
+extern "C" {
+#endif
+""".splitlines()
+
+C_MACRO_END = """
+#ifdef __cplusplus
+}
+#endif
+""".splitlines()
 
 
 @dataclass
@@ -233,9 +244,9 @@ class Preprocessor:
                     raise Exception(f"Failed to preprocess {asm_file}: {e}") from None
 
                 asm_files.append((asm_file, len(rodata_entries)))
-                out_lines += BEFORE_PREPROCESSED_LINES
+                out_lines += C_MACRO_START
                 out_lines += new_lines
-                out_lines += AFTER_PREPROCESSED_LINES
+                out_lines += C_MACRO_END
             else:
                 out_lines.append(line)
 
