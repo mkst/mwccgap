@@ -271,7 +271,7 @@ class Elf:
 
             sh_offset += len(data)
 
-            alignment = 1 << section.sh_addralign
+            alignment = section.sh_addralign
             if alignment:
                 if sh_offset % alignment:
                     bytes_needed = alignment - (sh_offset % alignment)
