@@ -115,6 +115,7 @@ def process_c_file(
 
         asm_text = asm_functions[0].data
         has_text = len(asm_text) > 0
+        asm_text_section_index = assembled_elf.sections.index(asm_functions[0])
 
         if has_text:
             # identify the .text section for this function
@@ -220,6 +221,12 @@ def process_c_file(
                     force = False
                 else:
                     force = True
+
+                if has_text and symbol.st_shndx == asm_text_section_index:
+                    # a global label inside this function's asm that is also a
+                    # relocation target (e.g. a jlabel that is a branch target):
+                    # point it at the compiled .text, not the asm object's index
+                    symbol.st_shndx = text_section_index
 
                 relocation.symbol_index = compiled_elf.add_symbol(symbol, force=force)
                 reloc_symbols.add(symbol.name)
